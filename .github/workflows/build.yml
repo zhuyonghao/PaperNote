@@ -1,0 +1,40 @@
+name: Build desktop apps
+on: [push, pull_request, workflow_dispatch]
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            rid: osx-arm64
+          - os: windows-latest
+            rid: win-x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: editor/package-lock.json
+      - run: npm ci
+        working-directory: editor
+      - run: npm run build
+        working-directory: editor
+      - run: npx playwright install chromium webkit
+        working-directory: editor
+      - run: npm test
+        working-directory: editor
+      - run: dotnet run --project tests/PaperNote.Tests
+      - if: runner.os == 'macOS'
+        run: ./scripts/publish-macos.sh ${{ matrix.rid }}
+      - if: runner.os == 'Windows'
+        run: ./scripts/publish-windows.ps1 -Runtime ${{ matrix.rid }}
+        shell: pwsh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PaperNote-${{ matrix.rid }}
+          path: artifacts/

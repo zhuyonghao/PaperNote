@@ -1,0 +1,127 @@
+<Application xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="PaperNote.App" Name="纸间" RequestedThemeVariant="Default">
+  <Application.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.ThemeDictionaries>
+        <ResourceDictionary x:Key="Light">
+          <SolidColorBrush x:Key="Text" Color="#354335" />
+          <SolidColorBrush x:Key="Muted" Color="#718069" />
+          <SolidColorBrush x:Key="Faint" Color="#7D8975" />
+          <SolidColorBrush x:Key="Canvas" Color="#FAFBF8" />
+          <SolidColorBrush x:Key="Surface" Color="#FFFFFF" />
+          <SolidColorBrush x:Key="Chrome" Color="#F1F4ED" />
+          <SolidColorBrush x:Key="Border" Color="#DFE5D8" />
+          <SolidColorBrush x:Key="Hover" Color="#E8EEDF" />
+          <SolidColorBrush x:Key="Selected" Color="#DFE9D5" />
+          <SolidColorBrush x:Key="Accent" Color="#647F53" />
+          <SolidColorBrush x:Key="AccentHover" Color="#536D44" />
+          <SolidColorBrush x:Key="AccentPressed" Color="#465F38" />
+          <SolidColorBrush x:Key="Danger" Color="#AC5148" />
+          <SolidColorBrush x:Key="HoverOverlay" Color="#146A7E55" />
+          <SolidColorBrush x:Key="White" Color="#FFFFFF" />
+          <SolidColorBrush x:Key="Primary" Color="#647F53" />
+          <SolidColorBrush x:Key="PrimaryHover" Color="#536D44" />
+          <SolidColorBrush x:Key="PrimaryPressed" Color="#465F38" />
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="Dark">
+          <SolidColorBrush x:Key="Text" Color="#E2E7DD" />
+          <SolidColorBrush x:Key="Muted" Color="#A5B09C" />
+          <SolidColorBrush x:Key="Faint" Color="#96A18E" />
+          <SolidColorBrush x:Key="Canvas" Color="#1C211C" />
+          <SolidColorBrush x:Key="Surface" Color="#272E26" />
+          <SolidColorBrush x:Key="Chrome" Color="#222920" />
+          <SolidColorBrush x:Key="Border" Color="#3C4537" />
+          <SolidColorBrush x:Key="Hover" Color="#35422F" />
+          <SolidColorBrush x:Key="Selected" Color="#3E5033" />
+          <SolidColorBrush x:Key="Accent" Color="#91AD7D" />
+          <SolidColorBrush x:Key="AccentHover" Color="#A1BC8D" />
+          <SolidColorBrush x:Key="AccentPressed" Color="#7E9C69" />
+          <SolidColorBrush x:Key="Danger" Color="#EF9A8D" />
+          <SolidColorBrush x:Key="HoverOverlay" Color="#287F9C69" />
+          <SolidColorBrush x:Key="White" Color="#FFFFFF" />
+          <SolidColorBrush x:Key="Primary" Color="#647F53" />
+          <SolidColorBrush x:Key="PrimaryHover" Color="#536D44" />
+          <SolidColorBrush x:Key="PrimaryPressed" Color="#465F38" />
+        </ResourceDictionary>
+      </ResourceDictionary.ThemeDictionaries>
+    </ResourceDictionary>
+  </Application.Resources>
+  <Application.Styles>
+    <FluentTheme>
+      <FluentTheme.Palettes>
+        <ColorPaletteResources x:Key="Light" Accent="#647F53" />
+        <ColorPaletteResources x:Key="Dark" Accent="#91AD7D" />
+      </FluentTheme.Palettes>
+    </FluentTheme>
+    <Style Selector="Window">
+      <Setter Property="Background" Value="{DynamicResource Canvas}" />
+      <Setter Property="FontFamily" Value="PingFang SC, Microsoft YaHei UI, Segoe UI, sans-serif" />
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="Foreground" Value="{DynamicResource Text}" />
+    </Style>
+    <Style Selector="Button">
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="Cursor" Value="Hand" />
+    </Style>
+    <Style Selector="Button.primary">
+      <Setter Property="Background" Value="{DynamicResource Primary}" />
+      <Setter Property="Foreground" Value="{DynamicResource White}" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="16,10" />
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="FontWeight" Value="Medium" />
+    </Style>
+    <Style Selector="Button.primary:pointerover /template/ ContentPresenter"><Setter Property="Background" Value="{DynamicResource PrimaryHover}" /><Setter Property="Foreground" Value="{DynamicResource White}" /></Style>
+    <Style Selector="Button.primary:pressed /template/ ContentPresenter"><Setter Property="Background" Value="{DynamicResource PrimaryPressed}" /></Style>
+    <Style Selector="Button.quiet">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Foreground" Value="{DynamicResource Muted}" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="8" />
+      <Setter Property="MinHeight" Value="30" />
+    </Style>
+    <Style Selector="Button.quiet:pointerover /template/ ContentPresenter"><Setter Property="Background" Value="{DynamicResource HoverOverlay}" /></Style>
+    <Style Selector="Button.nav">
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="Padding" Value="12,12" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="CornerRadius" Value="9" />
+    </Style>
+    <Style Selector="Button.nav.selected"><Setter Property="Background" Value="{DynamicResource Selected}" /></Style>
+    <Style Selector="Button.nav:pointerover /template/ ContentPresenter"><Setter Property="Background" Value="{DynamicResource Hover}" /></Style>
+    <Style Selector="Button.color-filter"><Setter Property="BorderThickness" Value="1" /><Setter Property="BorderBrush" Value="Transparent" /><Setter Property="CornerRadius" Value="7" /></Style>
+    <Style Selector="Button.color-filter.selected"><Setter Property="BorderBrush" Value="{DynamicResource Border}" /><Setter Property="Background" Value="{DynamicResource Selected}" /></Style>
+    <Style Selector="Button.settings-link"><Setter Property="Background" Value="{DynamicResource Hover}" /><Setter Property="Foreground" Value="{DynamicResource Accent}" /><Setter Property="BorderThickness" Value="0" /><Setter Property="Padding" Value="12,11" /><Setter Property="FontSize" Value="12" /></Style>
+    <Style Selector="Button.note-card"><Setter Property="HorizontalContentAlignment" Value="Stretch" /><Setter Property="VerticalContentAlignment" Value="Stretch" /><Setter Property="BorderThickness" Value="0" /></Style>
+    <Style Selector="Button.note-card:pointerover"><Setter Property="Opacity" Value="0.88" /></Style>
+    <Style Selector="Button.shortcut"><Setter Property="Background" Value="{DynamicResource Chrome}" /><Setter Property="BorderBrush" Value="{DynamicResource Border}" /><Setter Property="BorderThickness" Value="1" /><Setter Property="Foreground" Value="{DynamicResource Text}" /><Setter Property="CornerRadius" Value="9" /></Style>
+    <Style Selector="TextBox.search">
+      <Setter Property="Background" Value="{DynamicResource Surface}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Border}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="9" />
+      <Setter Property="Padding" Value="12,8" />
+      <Setter Property="FontSize" Value="12" />
+    </Style>
+    <Style Selector="ToolTip"><Setter Property="FontSize" Value="12" /></Style>
+    <Style Selector="Button.document-tool"><Setter Property="Width" Value="30" /><Setter Property="Height" Value="30" /><Setter Property="MinHeight" Value="30" /><Setter Property="Padding" Value="7" /><Setter Property="CornerRadius" Value="7" /><Setter Property="Background" Value="Transparent" /><Setter Property="BorderThickness" Value="0" /><Setter Property="HorizontalContentAlignment" Value="Center" /><Setter Property="VerticalContentAlignment" Value="Center" /></Style>
+    <Style Selector="Button.document-tool:pointerover /template/ ContentPresenter"><Setter Property="Background" Value="{DynamicResource Hover}" /></Style>
+    <Style Selector="Button.document-save"><Setter Property="Height" Value="30" /><Setter Property="MinHeight" Value="30" /><Setter Property="Padding" Value="12,5" /><Setter Property="CornerRadius" Value="7" /><Setter Property="Background" Value="{DynamicResource Primary}" /><Setter Property="BorderThickness" Value="0" /></Style>
+    <Style Selector="Button.document-save:pointerover /template/ ContentPresenter"><Setter Property="Background" Value="{DynamicResource PrimaryHover}" /></Style>
+    <Style Selector="Window.sticky Button.note-tool"><Setter Property="CornerRadius" Value="6" /><Setter Property="VerticalAlignment" Value="Center" /><Setter Property="HorizontalContentAlignment" Value="Center" /><Setter Property="VerticalContentAlignment" Value="Center" /></Style>
+    <Style Selector="Window.sticky Button.quiet:pointerover /template/ ContentPresenter"><Setter Property="Background" Value="{DynamicResource HoverOverlay}" /></Style>
+    <Style Selector="Window.sticky Button.quiet:pressed /template/ ContentPresenter"><Setter Property="Background" Value="{DynamicResource HoverOverlay}" /></Style>
+    <Style Selector="FlyoutPresenter.note-options"><Setter Property="Background" Value="{DynamicResource Chrome}" /><Setter Property="BorderBrush" Value="{DynamicResource Border}" /><Setter Property="BorderThickness" Value="1" /><Setter Property="CornerRadius" Value="12" /><Setter Property="Padding" Value="10" /></Style>
+    <Style Selector="Button.note-option:pointerover /template/ ContentPresenter"><Setter Property="Background" Value="{DynamicResource Hover}" /></Style>
+    <Style Selector="Button.note-choice"><Setter Property="CornerRadius" Value="6" /><Setter Property="Foreground" Value="{DynamicResource Muted}" /></Style>
+    <Style Selector="Button.note-choice.selected"><Setter Property="Background" Value="{DynamicResource Selected}" /><Setter Property="Foreground" Value="{DynamicResource Text}" /><Setter Property="FontWeight" Value="SemiBold" /></Style>
+    <Style Selector="Button.note-choice:pointerover /template/ ContentPresenter"><Setter Property="Background" Value="{DynamicResource Hover}" /></Style>
+    <Style Selector="ContextMenu"><Setter Property="Background" Value="{DynamicResource Surface}" /><Setter Property="BorderBrush" Value="{DynamicResource Border}" /><Setter Property="BorderThickness" Value="1" /><Setter Property="CornerRadius" Value="12" /><Setter Property="Padding" Value="6" /><Setter Property="MinWidth" Value="210" /></Style>
+    <Style Selector="MenuItem"><Setter Property="Foreground" Value="{DynamicResource Text}" /><Setter Property="FontSize" Value="12" /><Setter Property="Padding" Value="10,9" /><Setter Property="CornerRadius" Value="6" /></Style>
+    <Style Selector="MenuItem:pointerover /template/ Border#PART_LayoutRoot"><Setter Property="Background" Value="{DynamicResource Hover}" /></Style>
+    <Style Selector="MenuItem.danger"><Setter Property="Foreground" Value="{DynamicResource Danger}" /></Style>
+    <Style Selector="Button.danger"><Setter Property="Foreground" Value="{DynamicResource Danger}" /></Style>
+  </Application.Styles>
+</Application>

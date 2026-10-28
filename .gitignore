@@ -1,0 +1,9 @@
+**/bin/
+**/obj/
+editor/node_modules/
+artifacts/
+.DS_Store
+*.user
+editor/test-results/
+editor/playwright-report/
+packaging/*.iconset/
