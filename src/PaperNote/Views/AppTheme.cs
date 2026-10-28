@@ -7,27 +7,33 @@ internal static class AppTheme
 {
     private static readonly Dictionary<string, (string Light, string Dark)> Palette = new()
     {
-        ["Text"] = ("#354335", "#E2E7DD"),
-        ["Muted"] = ("#718069", "#A5B09C"),
-        ["Faint"] = ("#7D8975", "#96A18E"),
-        ["Canvas"] = ("#FAFBF8", "#1C211C"),
-        ["Surface"] = ("#FFFFFF", "#272E26"),
-        ["Chrome"] = ("#F1F4ED", "#222920"),
-        ["Border"] = ("#DFE5D8", "#3C4537"),
-        ["Hover"] = ("#E8EEDF", "#35422F"),
-        ["Selected"] = ("#DFE9D5", "#3E5033"),
-        ["Accent"] = ("#647F53", "#91AD7D"),
-        ["AccentHover"] = ("#536D44", "#A1BC8D"),
-        ["AccentPressed"] = ("#465F38", "#7E9C69"),
+        ["Paper-yellow"] = ("#FFFCF4", "#2C2924"),
+        ["Paper-green"] = ("#F8FBF5", "#252D28"),
+        ["Paper-blue"] = ("#F6F9FE", "#242B35"),
+        ["Paper-pink"] = ("#FEF7F8", "#30262C"),
+        ["Paper-purple"] = ("#FAF7FE", "#2B2735"),
+        ["Paper-white"] = ("#FFFFFF", "#24252F"),
+        ["Text"] = ("#292833", "#EEEFF5"),
+        ["Muted"] = ("#71717E", "#B4B5C3"),
+        ["Faint"] = ("#868591", "#9293A5"),
+        ["Canvas"] = ("#F8F8FA", "#191A21"),
+        ["Surface"] = ("#FFFFFF", "#24252F"),
+        ["Chrome"] = ("#F1F1F5", "#1E1F28"),
+        ["Border"] = ("#E6E5EC", "#363743"),
+        ["Hover"] = ("#EAE9F1", "#2D2E3B"),
+        ["Selected"] = ("#E9E5F6", "#35304D"),
+        ["Accent"] = ("#7460B6", "#BEACEF"),
+        ["AccentHover"] = ("#6551A4", "#D0BFFA"),
+        ["AccentPressed"] = ("#584591", "#AE98E5"),
         ["Danger"] = ("#AC5148", "#EF9A8D"),
-        ["HoverOverlay"] = ("#146A7E55", "#287F9C69"),
+        ["HoverOverlay"] = ("#10000000", "#18FFFFFF"),
         ["White"] = ("#FFFFFF", "#FFFFFF")
     };
     private static readonly Dictionary<string, SolidColorBrush> Brushes = [];
     private static readonly Dictionary<string, string> DarkPaper = new(StringComparer.OrdinalIgnoreCase)
     {
         ["#FFF6CF"] = "#363325", ["#EAF1DD"] = "#2D3828", ["#E6EFF8"] = "#283440",
-        ["#F9E5E7"] = "#3E2D32", ["#EEE8F6"] = "#342E40", ["#F7F6F2"] = "#272E26"
+        ["#F9E5E7"] = "#3E2D32", ["#EEE8F6"] = "#342E40", ["#F7F6F2"] = "#24252F"
     };
     public static bool IsDark => Application.Current?.ActualThemeVariant == ThemeVariant.Dark;
     public static event Action? Changed;

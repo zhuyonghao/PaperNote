@@ -32,6 +32,7 @@ public sealed class EditorPane : Grid
     public EditorPane(NoteStore? store = null, bool compact = false)
     {
         _store = store; _compact = compact;
+        UpdateBackground();
         Children.Add(_web); Children.Add(_error);
         _web.WebMessageReceived += OnMessage;
         _web.NavigationStarted += (_, e) => {
@@ -48,7 +49,16 @@ public sealed class EditorPane : Grid
             if (_ready) return;
             using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("PaperNote.Editor.editor.html")!;
             using var reader = new StreamReader(stream);
-            _web.NavigateToString(reader.ReadToEnd());
+            // Apply the surface before WebView creates its first native frame. CSS
+            // and bridge configuration otherwise arrive after the blank browser surface.
+            UpdateBackground();
+            var theme = AppTheme.IsDark ? "dark" : "light";
+            var surface = SurfaceColor;
+            var background = _compact ? "var(--paper)" : "var(--canvas)";
+            var html = reader.ReadToEnd()
+                .Replace("<html lang=\"zh-CN\">", $"<html lang=\"zh-CN\" data-theme=\"{theme}\" style=\"background:{background};--paper:{surface};--canvas:{surface}\">")
+                .Replace("<body>", _compact ? "<body class=\"compact\">" : "<body>");
+            _web.NavigateToString(html);
         };
     }
     private void OnMessage(object? sender, WebMessageReceivedEventArgs e)
@@ -80,8 +90,8 @@ public sealed class EditorPane : Grid
     }
     private async Task InitializeEditorAsync()
     {
-        if (_note is not null) await PushNoteAsync();
         await ApplyOptionsAsync();
+        if (_note is not null) await PushNoteAsync();
         if (_focusRequested) { _focusRequested = false; await ScriptAsync("paper.focus()"); }
     }
     public void ConfigureCompact(bool showFormatting, double fontSize)
@@ -90,8 +100,17 @@ public sealed class EditorPane : Grid
         _fontSize = Math.Clamp(double.IsFinite(fontSize) ? fontSize : 15, 13, 20);
         if (_ready) _ = ApplyOptionsAsync();
     }
-    private Task ApplyOptionsAsync() => ScriptAsync("paper.configure(" + JsonSerializer.Serialize(new { compact = _compact, toolbar = !_compact || _showFormatting, fontSize = _fontSize, mode = _viewMode, readOnly = _readOnly, dark = AppTheme.IsDark, paper = AppTheme.Resolve(NoteColors.Get(_note?.Color ?? "white").Paper) }) + ")");
-    private void OnThemeChanged() { if (_ready) _ = ApplyOptionsAsync(); }
+    private Task ApplyOptionsAsync() => ScriptAsync("paper.configure(" + JsonSerializer.Serialize(new { compact = _compact, toolbar = !_compact || _showFormatting, fontSize = _fontSize, mode = _viewMode, readOnly = _readOnly, dark = AppTheme.IsDark, canvas = AppTheme.Resolve("Canvas"), paper = AppTheme.Resolve(NoteColors.Get(_note?.Color ?? "white").Paper) }) + ")");
+    private string SurfaceColor => _compact
+        ? AppTheme.Resolve(NoteColors.Get(_note?.Color ?? "white").Paper)
+        : AppTheme.Resolve("Canvas");
+    private void UpdateBackground()
+    {
+        // NativeWebView forwards Background to the native browser controller;
+        // a managed overlay cannot cover a windowed WebView on Windows.
+        Background = _web.Background = UI.Brush(SurfaceColor);
+    }
+    private void OnThemeChanged() { UpdateBackground(); if (_ready) _ = ApplyOptionsAsync(); }
     public void SetReadOnly(bool readOnly) { if (readOnly && !_readOnly) _viewMode = "rich"; _readOnly = readOnly; if (_ready) _ = ApplyOptionsAsync(); }
     public void SetViewMode(string mode)
     {
@@ -108,6 +127,9 @@ public sealed class EditorPane : Grid
     }
     public void SetNote(Note note)
     {
+        // Set the native backing surface even when only the paper color changes.
+        var surface = _compact ? AppTheme.Resolve(NoteColors.Get(note.Color).Paper) : AppTheme.Resolve("Canvas");
+        Background = _web.Background = UI.Brush(surface);
         if (_note?.Id == note.Id && _markdown == note.Markdown && _deleted == note.IsDeleted)
         { if (_ready) _ = ScriptAsync("paper.setColor(" + JsonSerializer.Serialize(AppTheme.Resolve(NoteColors.Get(note.Color).Paper)) + ")"); return; }
         _note = note; _markdown = note.Markdown; _deleted = note.IsDeleted; _token++;

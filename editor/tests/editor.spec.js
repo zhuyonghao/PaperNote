@@ -299,15 +299,15 @@ test('immersive reading hides editing tools and blocks changes in rich and sourc
 test('theme changes preserve source edits, selection and undo history', async ({ page }) => {
   await page.evaluate(() => window.paper.setMode('source'));
   await page.locator('#source').fill('# 夜间内容');
-  await page.evaluate(() => window.paper.configure({ compact: false, toolbar: true, dark: true, paper: '#272e26' }));
+  await page.evaluate(() => window.paper.configure({ compact: false, toolbar: true, dark: true, paper: '#272e26', canvas: '#191a21' }));
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
-  await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(28, 33, 28)');
+  await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(25, 26, 33)');
   await expect(page.locator('#source')).toHaveValue('# 夜间内容');
   await page.evaluate(() => window.paper.configure({ compact: true, toolbar: false, dark: true, paper: '#363325' }));
   await expect(page.locator('html')).toHaveCSS('background-color', 'rgb(54, 51, 37)');
   expect(await page.evaluate(() => window.paper.getMarkdown())).toBe('# 夜间内容');
-  await page.evaluate(() => window.paper.configure({ compact: false, toolbar: true, dark: false }));
-  await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(250, 251, 248)');
+  await page.evaluate(() => window.paper.configure({ compact: false, toolbar: true, dark: false, canvas: '#f8f8fa' }));
+  await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(248, 248, 250)');
   expect(await page.evaluate(() => window.paper.getMarkdown())).toBe('# 夜间内容');
 });
 

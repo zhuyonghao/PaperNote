@@ -5,6 +5,7 @@ public enum ShortcutModifiers { None = 0, Control = 1, Alt = 2, Shift = 4, Meta 
 public sealed record ShortcutSpec(string Key, ShortcutModifiers Modifiers)
 {
     public static ShortcutSpec Default => new("N", OperatingSystem.IsMacOS() ? ShortcutModifiers.Meta | ShortcutModifiers.Alt : ShortcutModifiers.Control | ShortcutModifiers.Alt);
+    public static ShortcutSpec VisibilityDefault => new("H", Default.Modifiers);
     public string Display(bool macOS) => string.Join(macOS ? " " : " + ", Parts(macOS));
     private IEnumerable<string> Parts(bool mac)
     {
@@ -30,6 +31,8 @@ public sealed class AppSettings
     public string ThemeMode { get; set; } = "system";
     public bool GlobalShortcutEnabled { get; set; } = true;
     public ShortcutSpec NewNoteShortcut { get; set; } = ShortcutSpec.Default;
+    public bool VisibilityShortcutEnabled { get; set; } = true;
+    public ShortcutSpec VisibilityShortcut { get; set; } = ShortcutSpec.VisibilityDefault;
     public bool RestoreDesktop { get; set; } = true;
     public string DefaultColor { get; set; } = "yellow";
 }

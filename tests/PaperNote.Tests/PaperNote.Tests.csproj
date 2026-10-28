@@ -1,6 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings></PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="Avalonia" Version="12.1.4" />
+    <Compile Include="../../src/PaperNote/Views/LibraryCardsPanel.cs" Link="LibraryCardsPanel.cs" />
+    <Compile Include="../../src/PaperNote/Services/LibrarySelection.cs" Link="LibrarySelection.cs" />
     <Compile Include="../../src/PaperNote/Models/Note.cs" Link="Note.cs" />
     <Compile Include="../../src/PaperNote/Services/NoteStore.cs" Link="NoteStore.cs" />
     <Compile Include="../../src/PaperNote/Services/MarkdownDocument.cs" Link="MarkdownDocument.cs" />

@@ -39,12 +39,14 @@ public sealed class StickyWindow : Window
         Title = note.Title; MinWidth = 280; MinHeight = 220; Width = 340; Height = 380;
         Background = UI.Brush(NoteColors.Get(note.Color).Paper);
         Classes.Add("sticky");
+        if (OperatingSystem.IsWindows()) Classes.Add("custom-titlebar");
+        if (OperatingSystem.IsWindows()) { CanMinimize = false; CanMaximize = false; }
         ExtendClientAreaToDecorationsHint = true; ExtendClientAreaTitleBarHeightHint = 44;
         WindowStartupLocation = WindowStartupLocation.Manual;
         _root = new Grid { RowDefinitions = new RowDefinitions("44,*,40") }; Content = _root;
         _options.FlyoutPresenterClasses.Add("note-options");
 
-        var bar = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Margin = new Thickness(OperatingSystem.IsMacOS() ? 79 : 13, 0, OperatingSystem.IsWindows() ? 140 : 8, 0) };
+        var bar = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Margin = new Thickness(OperatingSystem.IsMacOS() ? 79 : 13, 0, OperatingSystem.IsWindows() ? 50 : 8, 0) };
         _caption.TextTrimming = TextTrimming.CharacterEllipsis; _caption.Margin = new Thickness(0, 0, 8, 0); bar.Children.Add(_caption);
         var actions = UI.Stack(Orientation.Horizontal, 2);
         _add = SmallIcon("plus", "新建桌面便签 · ⌘/Ctrl N", () => _controller.NewNote(_note.Color, Position)); actions.Children.Add(_add);

@@ -12,7 +12,7 @@ internal static class UI
     public static bool FindAncestorButton(this Control control) => control.GetVisualAncestors().OfType<Button>().Any();
     public static IBrush Brush(string color) => AppTheme.Brush(color);
     public static TextBlock Text(string text, double size = 13, string color = "Text", FontWeight? weight = null) =>
-        new() { Text = text, FontSize = size, Foreground = Brush(color), FontWeight = weight ?? FontWeight.Normal, VerticalAlignment = VerticalAlignment.Center };
+        new() { Text = text, FontFamily = App.Fonts, FontSize = size, Foreground = Brush(color), FontWeight = weight ?? FontWeight.Normal, VerticalAlignment = VerticalAlignment.Center };
     public static StackPanel Stack(Orientation orientation, double spacing = 0) => new() { Orientation = orientation, Spacing = spacing };
     public static Border Line() => new() { Background = Brush("Border"), Height = 1 };
     public static Control Icon(string name, string color = "Muted", double size = 17)
@@ -25,6 +25,7 @@ internal static class UI
             "notes" => "M5 3H19V21H5Z M8 8H16 M8 12H16 M8 16H13",
             "pin" => "M8 3H16L15 10L19 14H5L9 10Z M12 14V22",
             "trash" => "M3 6H21 M8 6V3H16V6 M5 6L6 21H18L19 6 M10 10V17 M14 10V17",
+            "sort" => "M4 6H20 M4 12H15 M4 18H10",
             "search" => "M20 20L15 15 M17 10A7 7 0 1 1 3 10A7 7 0 1 1 17 10",
             "export" => "M12 16V2 M7 7L12 2L17 7 M4 13V21H20V13",
             "import" => "M12 2V16 M7 11L12 16L17 11 M4 17V22H20V17",

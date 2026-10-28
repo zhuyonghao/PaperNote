@@ -37,6 +37,7 @@ public sealed class MarkdownWindow : Window
         Icon = UI.AppIcon(); Width = 1060; Height = 780; MinWidth = 580; MinHeight = 420;
         Background = UI.Brush("Canvas"); WindowStartupLocation = WindowStartupLocation.CenterScreen;
         ExtendClientAreaToDecorationsHint = true; ExtendClientAreaTitleBarHeightHint = 52;
+        if (OperatingSystem.IsWindows()) Classes.Add("custom-titlebar");
         var root = _root = new Grid { RowDefinitions = new RowDefinitions("52,*,30") }; Content = root;
         var header = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Margin = new Thickness(OperatingSystem.IsMacOS() ? 83 : 20, 0, OperatingSystem.IsWindows() ? 145 : 18, 0) };
         var file = new Grid { ColumnDefinitions = new ColumnDefinitions("22,*"), Margin = new Thickness(0, 0, 18, 0) };

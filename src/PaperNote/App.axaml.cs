@@ -7,11 +7,14 @@ using PaperNote.Views;
 namespace PaperNote;
 public partial class App : Application
 {
+    internal static readonly Avalonia.Media.FontFamily Fonts = new(
+        OperatingSystem.IsWindows() ? "Microsoft YaHei UI" : OperatingSystem.IsMacOS() ? "PingFang SC" : "sans-serif");
     internal static SingleInstanceService? Instance { get; set; }
     internal static string[] LaunchArguments { get; set; } = [];
     public override void Initialize()
     {
         AvaloniaXamlLoader.Load(this);
+        Resources["AppFontFamily"] = Fonts;
         if (Environment.GetEnvironmentVariable("PAPERNOTE_TEST_MODE") == "1") Name = "纸间测试";
     }
     public override void OnFrameworkInitializationCompleted()

@@ -16,6 +16,7 @@ public sealed class SettingsStore
             Current = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(_path)) ?? new();
             if (Current.ThemeMode is not ("system" or "light" or "dark")) Current.ThemeMode = "system";
             if (Current.NewNoteShortcut is null || Current.NewNoteShortcut.Validate() is not null) Current.NewNoteShortcut = ShortcutSpec.Default;
+            if (Current.VisibilityShortcut is null || Current.VisibilityShortcut.Validate() is not null) Current.VisibilityShortcut = ShortcutSpec.VisibilityDefault;
             if (!NoteColors.All.Any(c => c.Key == Current.DefaultColor)) Current.DefaultColor = "yellow";
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)

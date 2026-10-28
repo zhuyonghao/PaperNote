@@ -1,5 +1,8 @@
+using Avalonia;
+using Avalonia.Controls;
 using PaperNote.Models;
 using PaperNote.Services;
+using PaperNote.Views;
 
 if (args.Length >= 2 && args[0] == "--instance-client")
 {
@@ -14,6 +17,48 @@ var passed = 0;
 void Check(bool value, string name) { if (!value) throw new Exception("FAIL: " + name); Console.WriteLine("PASS: " + name); passed++; }
 try
 {
+    var ids = Enumerable.Range(0, 6).Select(_ => Guid.NewGuid()).ToArray();
+    var selection = new LibrarySelection(); selection.SetVisible(ids);
+    selection.Begin(); selection.Toggle(ids[1]); selection.Toggle(ids[4]);
+    Check(selection.IsActive && selection.Count == 2 && selection.Contains(ids[1]) && selection.Contains(ids[4]), "clicking cards adds independent selections");
+    selection.Toggle(ids[1]);
+    Check(selection.Count == 1 && !selection.Contains(ids[1]), "clicking a selected card deselects only that note");
+    selection.Toggle(Guid.NewGuid());
+    Check(selection.Count == 1, "notes outside the visible results cannot be selected");
+    selection.SelectAll();
+    Check(selection.Count == 6, "select all selects exactly the visible notes");
+    selection.SetVisible(ids.Reverse());
+    Check(selection.Count == 6, "sorting or changing view preserves selection by note ID");
+    selection.SetVisible([ids[1], ids[3]]);
+    Check(selection.Count == 2 && !selection.Contains(ids[4]), "searching removes hidden notes from batch selection");
+    selection.SetVisible(ids);
+    Check(selection.Count == 2, "clearing search does not silently reselect hidden notes");
+    selection.Clear();
+    Check(selection.Count == 0 && selection.IsActive, "clearing selection keeps multi-select mode active");
+    selection.SelectAll(); selection.End(); selection.Begin();
+    Check(selection.Count == 0 && selection.IsActive, "finishing then reopening multi-select starts with no selection");
+    selection.SelectAll(); selection.SetVisible(ids.Skip(2));
+    Check(selection.Count == 4 && !selection.Contains(ids[0]) && selection.Contains(ids[2]), "a partial batch keeps unprocessed visible notes selected");
+    selection.SetVisible([]); selection.SelectAll();
+    Check(selection.Count == 0, "empty results have no actionable selection");
+
+    foreach (var width in new double[] { 320, 503, 504, 763, 764, 864, 1156, 1500 })
+    {
+        var cards = new LibraryCardsPanel();
+        for (var i = 0; i < 12; i++) cards.Children.Add(new Border { Height = 228 });
+        cards.Measure(new Size(width, double.PositiveInfinity));
+        cards.Arrange(new Rect(0, 0, width, cards.DesiredSize.Height));
+        var expectedColumns = Math.Max(1, (int)Math.Floor((width + 16) / 260));
+        var firstRow = cards.Children.Where(c => c.Bounds.Y == 0).ToArray();
+        Check(firstRow.Length == expectedColumns && Math.Abs(firstRow[^1].Bounds.Right - width) < 1.01
+            && cards.Children.All(c => c.Bounds.Right <= width + 1.01), $"cards fill {width}px viewport without losing the last column");
+        cards.ListView = true; cards.Measure(new Size(width, double.PositiveInfinity));
+        cards.Arrange(new Rect(0, 0, width, cards.DesiredSize.Height));
+        Check(cards.Children.All(c => Math.Abs(c.Bounds.Width - width) < 1.01) && cards.Children[1].Bounds.Y > 0, $"list rows fill {width}px viewport after changing view");
+    }
+    var emptyPanel = new LibraryCardsPanel(); emptyPanel.Children.Add(new Border { Tag = "empty", Height = 200 });
+    emptyPanel.Measure(new Size(864, double.PositiveInfinity)); emptyPanel.Arrange(new Rect(0, 0, 864, 200));
+    Check(emptyPanel.Children[0].Bounds.Width == 864, "empty state spans the full card viewport");
     var path = Path.Combine(directory, "notes.json");
     Check(LaunchRequest.TryParse([], out var emptyLaunch) && emptyLaunch.Action == "--show", "empty launches preserve normal application activation");
     Check(LaunchRequest.TryParse(["--markdown"], out var editorLaunch) && editorLaunch.Action == "--markdown", "Markdown editor commands are valid single-instance requests");
@@ -144,14 +189,26 @@ try
     Check(onSecond.X == -1400 && onSecond.Y == 160 && onSecond.Width == 315, "valid negative coordinates on a second monitor are preserved");
     var preferences = new SettingsStore(Path.Combine(directory, "preferences"));
     Check(preferences.Current.NewNoteShortcut.Validate() is null, "default global shortcut is valid");
+    Check(preferences.Current.VisibilityShortcut.Validate() is null && preferences.Current.VisibilityShortcut != preferences.Current.NewNoteShortcut, "visibility shortcut has a valid independent default");
     Check(new ShortcutSpec("N", ShortcutModifiers.None).Validate() is not null, "bare keys cannot be registered globally");
     Check(new ShortcutSpec("F12", ShortcutModifiers.Control).Validate() is not null, "unsupported keys are rejected");
     preferences.Current.NewNoteShortcut = new("K", ShortcutModifiers.Control | ShortcutModifiers.Alt);
+    preferences.Current.VisibilityShortcut = new("J", ShortcutModifiers.Control | ShortcutModifiers.Shift);
+    preferences.Current.VisibilityShortcutEnabled = false;
     preferences.Current.GlobalShortcutEnabled = false; preferences.Current.RestoreDesktop = false; preferences.Current.DefaultColor = "green"; preferences.Current.ThemeMode = "dark";
     Check(preferences.Save(), "application preferences save atomically");
     var loadedPreferences = new SettingsStore(Path.Combine(directory, "preferences"));
+    Check(loadedPreferences.Current.VisibilityShortcut == preferences.Current.VisibilityShortcut && !loadedPreferences.Current.VisibilityShortcutEnabled, "custom visibility shortcut and enabled state survive restart");
     Check(loadedPreferences.Current.NewNoteShortcut == preferences.Current.NewNoteShortcut && !loadedPreferences.Current.GlobalShortcutEnabled && !loadedPreferences.Current.RestoreDesktop && loadedPreferences.Current.DefaultColor == "green" && loadedPreferences.Current.ThemeMode == "dark", "custom shortcut and desktop preferences survive restart");
     var malformedDirectory = Path.Combine(directory, "bad-preferences"); Directory.CreateDirectory(malformedDirectory);
+    var oldSettingsDirectory = Path.Combine(directory, "old-settings"); Directory.CreateDirectory(oldSettingsDirectory);
+    File.WriteAllText(Path.Combine(oldSettingsDirectory, "settings.json"), "{\"NewNoteShortcut\":{\"Key\":\"K\",\"Modifiers\":3}}");
+    var migratedSettings = new SettingsStore(oldSettingsDirectory);
+    Check(migratedSettings.Current.NewNoteShortcut.Key == "K" && migratedSettings.Current.VisibilityShortcut == ShortcutSpec.VisibilityDefault && migratedSettings.Current.VisibilityShortcutEnabled, "older preferences gain visibility shortcut without losing existing shortcut");
+    File.WriteAllText(Path.Combine(oldSettingsDirectory, "settings.json"), "{\"VisibilityShortcut\":null}");
+    Check(new SettingsStore(oldSettingsDirectory).Current.VisibilityShortcut == ShortcutSpec.VisibilityDefault, "null visibility shortcut falls back safely");
+    File.WriteAllText(Path.Combine(oldSettingsDirectory, "settings.json"), "{\"VisibilityShortcut\":{\"Key\":\"F12\",\"Modifiers\":1}}");
+    Check(new SettingsStore(oldSettingsDirectory).Current.VisibilityShortcut == ShortcutSpec.VisibilityDefault, "invalid visibility shortcut falls back safely");
     File.WriteAllText(Path.Combine(malformedDirectory, "settings.json"), "{broken");
     var malformedPreferences = new SettingsStore(malformedDirectory);
     Check(malformedPreferences.Error is not null && Directory.GetFiles(malformedDirectory, "settings.json.damaged-*").Length == 1, "damaged preferences are preserved before fallback");

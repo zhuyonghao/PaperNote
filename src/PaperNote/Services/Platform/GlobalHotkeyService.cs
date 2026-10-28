@@ -33,6 +33,7 @@ public sealed class GlobalHotkeyService : IDisposable
         private readonly Handler _handler;
         private IntPtr _eventHandler, _hotkey;
         private uint _id;
+        private static int _nextMacId;
         private ShortcutSpec? _current;
         private readonly int _installStatus;
         public MacBackend(Action pressed)
@@ -43,7 +44,10 @@ public sealed class GlobalHotkeyService : IDisposable
         }
         private int OnEvent(IntPtr next, IntPtr evt, IntPtr user)
         {
-            try { if (_current is not null) _pressed(); } catch (Exception ex) { System.Diagnostics.Trace.WriteLine(ex); }
+            // Carbon sends hotkey events to every installed handler. Dispatch only our ID.
+            if (GetEventParameter(evt, 0x2D2D2D2D, 0x686B6964, IntPtr.Zero, (uint)Marshal.SizeOf<HotKeyId>(), IntPtr.Zero, out var id) != 0
+                || id.Signature != 0x50415052 || id.Id != _id || _current is null) return -9874;
+            try { _pressed(); } catch (Exception ex) { System.Diagnostics.Trace.WriteLine(ex); }
             return 0;
         }
         public Task<HotkeyResult> ApplyAsync(ShortcutSpec? shortcut)
@@ -61,10 +65,11 @@ public sealed class GlobalHotkeyService : IDisposable
             if (shortcut.Modifiers.HasFlag(ShortcutModifiers.Shift)) mods |= 1u << 9;
             if (shortcut.Modifiers.HasFlag(ShortcutModifiers.Alt)) mods |= 1u << 11;
             if (shortcut.Modifiers.HasFlag(ShortcutModifiers.Control)) mods |= 1u << 12;
-            var status = RegisterEventHotKey(code, mods, new HotKeyId { Signature = 0x50415052, Id = ++_id }, GetApplicationEventTarget(), 0, out var replacement);
+            var nextId = (uint)Interlocked.Increment(ref _nextMacId);
+            var status = RegisterEventHotKey(code, mods, new HotKeyId { Signature = 0x50415052, Id = nextId }, GetApplicationEventTarget(), 0, out var replacement);
             if (status != 0) return Task.FromResult(new HotkeyResult(false, $"这个快捷键已被系统或其他应用占用，请换一个组合。（{status}）"));
             if (_hotkey != IntPtr.Zero) UnregisterEventHotKey(_hotkey);
-            _hotkey = replacement; _current = shortcut; return Task.FromResult(new HotkeyResult(true));
+            _hotkey = replacement; _id = nextId; _current = shortcut; return Task.FromResult(new HotkeyResult(true));
         }
         private static uint MacKeyCode(string key) => key.ToUpperInvariant() switch
         {
@@ -88,6 +93,7 @@ public sealed class GlobalHotkeyService : IDisposable
         [DllImport(Carbon)] private static extern int RemoveEventHandler(IntPtr handler);
         [DllImport(Carbon)] private static extern int RegisterEventHotKey(uint code, uint modifiers, HotKeyId id, IntPtr target, uint options, out IntPtr key);
         [DllImport(Carbon)] private static extern int UnregisterEventHotKey(IntPtr key);
+        [DllImport(Carbon)] private static extern int GetEventParameter(IntPtr evt, uint name, uint type, IntPtr actualType, uint size, IntPtr actualSize, out HotKeyId value);
     }
     [SupportedOSPlatform("windows")]
     private sealed class WindowsBackend : IBackend

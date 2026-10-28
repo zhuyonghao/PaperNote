@@ -227,6 +227,7 @@ window.paper = {
     readOnly = !!options.readOnly;
     document.documentElement.dataset.theme = options.dark ? 'dark' : 'light';
     if (options.paper) document.documentElement.style.setProperty('--paper', options.paper);
+    if (options.canvas) document.documentElement.style.setProperty('--canvas', options.canvas);
     applyReadingState();
     document.documentElement.style.setProperty('--font-size', `${options.fontSize || 15}px`);
     if (options.mode) setMode(options.mode);

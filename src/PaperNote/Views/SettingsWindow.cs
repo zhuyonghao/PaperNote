@@ -18,6 +18,13 @@ public sealed class SettingsWindow : Window
     private readonly TextBlock _shortcutInfo = UI.Text("", 12, "Muted");
     private readonly TextBlock _message = UI.Text("", 12, "Accent");
     private readonly Button _record, _save, _approval;
+    private readonly Button _visibilityRecord, _visibilitySave;
+    private readonly ToggleSwitch _visibilityEnabled = new() { OnContent = "开", OffContent = "关" };
+    private readonly TextBlock _visibilityInfo = UI.Text("", 12, "Muted");
+    private bool _editingVisibility;
+    private Button ActiveRecord => _editingVisibility ? _visibilityRecord : _record;
+    private Button ActiveSave => _editingVisibility ? _visibilitySave : _save;
+    private TextBlock ActiveInfo => _editingVisibility ? _visibilityInfo : _shortcutInfo;
     private ShortcutSpec _candidate;
     private bool _recording, _updating;
     public SettingsWindow(DesktopController controller)
@@ -27,7 +34,7 @@ public sealed class SettingsWindow : Window
         Icon = UI.AppIcon(); Background = UI.Brush("Canvas"); WindowStartupLocation = WindowStartupLocation.CenterScreen;
         var scroll = new ScrollViewer { HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
         var body = UI.Stack(Orientation.Vertical, 20); body.Margin = new Thickness(32, 26, 32, 26); scroll.Content = body; Content = scroll;
-        var title = UI.Stack(Orientation.Vertical, 5); title.Children.Add(UI.Text("让纸间按你的习惯工作", 24, "Text", FontWeight.SemiBold)); title.Children.Add(UI.Text("桌面上的小事，用顺手的方式记录。", 13, "Muted")); body.Children.Add(title);
+        var title = UI.Stack(Orientation.Vertical, 5); title.Children.Add(UI.Text("设置", 24, "Text", FontWeight.SemiBold)); title.Children.Add(UI.Text("外观、桌面与快捷键", 13, "Muted")); body.Children.Add(title);
 
         var appearance = UI.Stack(Orientation.Vertical, 0); appearance.Children.Add(SectionTitle("外观"));
         var modes = new ComboBox { ItemsSource = new[] { "跟随系统", "白天模式", "黑夜模式" }, MinWidth = 140,
@@ -62,13 +69,37 @@ public sealed class SettingsWindow : Window
         var capture = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Margin = new Thickness(20, 0, 20, 12), ColumnSpacing = 10 };
         _record = new Button { Content = _candidate.Display(OperatingSystem.IsMacOS()), Classes = { "shortcut" }, HorizontalContentAlignment = HorizontalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Stretch, Height = 48, FontSize = 18 };
         ToolTip.SetTip(_record, "点击后按下新的快捷键；Esc 取消"); Avalonia.Automation.AutomationProperties.SetName(_record, "录制新建便签快捷键");
-        _record.Click += async (_, _) => await BeginRecording(); capture.Children.Add(_record);
+        _record.Click += async (_, _) => await BeginRecording(false); capture.Children.Add(_record);
         _save = new Button { Content = "保存快捷键", Classes = { "primary" }, IsEnabled = false, VerticalAlignment = VerticalAlignment.Center };
-        _save.Click += async (_, _) => await SaveShortcut(); Grid.SetColumn(_save, 1); capture.Children.Add(_save); shortcut.Children.Add(capture);
+        _save.Click += async (_, _) => { _editingVisibility = false; _candidate = (ShortcutSpec?)_record.Tag ?? controller.Preferences.Current.NewNoteShortcut; await SaveShortcut(); }; Grid.SetColumn(_save, 1); capture.Children.Add(_save); shortcut.Children.Add(capture);
         _shortcutInfo.Text = controller.ShortcutStatus; _shortcutInfo.TextWrapping = TextWrapping.Wrap; _shortcutInfo.Margin = new Thickness(20, 0, 20, 8); shortcut.Children.Add(_shortcutInfo);
         var reset = new Button { Content = "恢复默认快捷键", Classes = { "quiet" }, HorizontalAlignment = HorizontalAlignment.Left, FontSize = 11, Margin = new Thickness(13, 0, 0, 10) };
-        reset.Click += async (_, _) => { if (_recording) await CancelRecording(); _candidate = ShortcutSpec.Default; _record.Content = _candidate.Display(OperatingSystem.IsMacOS()); await SaveShortcut(); }; shortcut.Children.Add(reset);
+        reset.Click += async (_, _) => { if (_recording) await CancelRecording(); _editingVisibility = false; _candidate = ShortcutSpec.Default; _record.Content = _candidate.Display(OperatingSystem.IsMacOS()); await SaveShortcut(); }; shortcut.Children.Add(reset);
         body.Children.Add(Card(shortcut));
+
+        var visibility = UI.Stack(Orientation.Vertical, 0); visibility.Children.Add(SectionTitle("隐藏 / 显示桌面便签"));
+        _visibilityEnabled.IsChecked = controller.Preferences.Current.VisibilityShortcutEnabled;
+        Avalonia.Automation.AutomationProperties.SetName(_visibilityEnabled, "启用隐藏显示全局快捷键");
+        visibility.Children.Add(Row("全局快捷键", "按一次暂时隐藏，再按一次恢复；保留内容和桌面布局。", _visibilityEnabled));
+        var visibilityCapture = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Margin = new Thickness(20, 0, 20, 12), ColumnSpacing = 10 };
+        _visibilityRecord = new Button { Content = controller.Preferences.Current.VisibilityShortcut.Display(OperatingSystem.IsMacOS()), Classes = { "shortcut" }, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center, Height = 48, FontSize = 18 };
+        Avalonia.Automation.AutomationProperties.SetName(_visibilityRecord, "录制隐藏显示桌面便签快捷键");
+        ToolTip.SetTip(_visibilityRecord, "点击后按下新的快捷键；Esc 取消");
+        _visibilityRecord.Click += async (_, _) => await BeginRecording(true); visibilityCapture.Children.Add(_visibilityRecord);
+        _visibilitySave = new Button { Content = "保存快捷键", Classes = { "primary" }, IsEnabled = false, VerticalAlignment = VerticalAlignment.Center };
+        _visibilitySave.Click += async (_, _) => { _editingVisibility = true; _candidate = (ShortcutSpec?)_visibilityRecord.Tag ?? controller.Preferences.Current.VisibilityShortcut; await SaveShortcut(); };
+        Grid.SetColumn(_visibilitySave, 1); visibilityCapture.Children.Add(_visibilitySave); visibility.Children.Add(visibilityCapture);
+        _visibilityInfo.Text = controller.VisibilityShortcutStatus; _visibilityInfo.TextWrapping = TextWrapping.Wrap; _visibilityInfo.Margin = new Thickness(20, 0, 20, 8); visibility.Children.Add(_visibilityInfo);
+        var visibilityReset = new Button { Content = "恢复默认快捷键", Classes = { "quiet" }, HorizontalAlignment = HorizontalAlignment.Left, FontSize = 11, Margin = new Thickness(13, 0, 0, 10) };
+        visibilityReset.Click += async (_, _) => { if (_recording) await CancelRecording(); _editingVisibility = true; _candidate = ShortcutSpec.VisibilityDefault; _visibilityRecord.Content = _candidate.Display(OperatingSystem.IsMacOS()); await SaveShortcut(); };
+        visibility.Children.Add(visibilityReset); body.Children.Add(Card(visibility));
+        _visibilityEnabled.PropertyChanged += async (_, e) => {
+            if (_updating || e.Property != ToggleSwitch.IsCheckedProperty) return;
+            _visibilityEnabled.IsEnabled = false;
+            var result = await controller.SaveVisibilityShortcutAsync(controller.Preferences.Current.VisibilityShortcut, _visibilityEnabled.IsChecked == true);
+            _updating = true; _visibilityEnabled.IsChecked = controller.Preferences.Current.VisibilityShortcutEnabled; _updating = false; _visibilityEnabled.IsEnabled = true;
+            ShowMessage(result.Success ? controller.VisibilityShortcutStatus : result.Error!, !result.Success);
+        };
 
         var defaults = UI.Stack(Orientation.Vertical, 0); defaults.Children.Add(SectionTitle("新的便签"));
         var colors = UI.Stack(Orientation.Horizontal, 7); colors.Margin = new Thickness(20, 0, 20, 18);
@@ -104,7 +135,7 @@ public sealed class SettingsWindow : Window
         Closed += async (_, _) => { controller.IntegrationChanged -= RefreshStatus; if (_recording) { _recording = false; await controller.RefreshShortcutAsync(); } };
     }
     private static Control SectionTitle(string text) => new Border { Child = UI.Text(text, 14, "Text", FontWeight.SemiBold), Padding = new Thickness(20, 17, 20, 7) };
-    private static Border Card(Control child) => new() { Child = child, Background = UI.Brush("Surface"), BorderBrush = UI.Brush("Border"), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(13) };
+    private static Border Card(Control child) => new() { Child = child, Background = UI.Brush("Surface"), BorderBrush = UI.Brush("Border"), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(8) };
     private static Border Divider() => new() { Background = UI.Brush("Border"), Height = 1, Margin = new Thickness(20, 0) };
     private static Grid Row(string title, string description, Control action)
     {
@@ -126,19 +157,21 @@ public sealed class SettingsWindow : Window
         UpdateStartupDescription(result.State);
         ShowMessage(result.Success ? result.State == AutoStartState.RequiresApproval ? "请到系统设置完成登录项授权。" : "开机自启设置已更新。" : result.Error ?? "无法更新登录项，请重试。", !result.Success);
     }
-    private async Task BeginRecording()
+    private async Task BeginRecording(bool visibility)
     {
+        if (_recording) await CancelRecording();
+        _editingVisibility = visibility;
         var result = await _controller.SuspendShortcutAsync();
         if (!result.Success) { ShowMessage(result.Error!, true); return; }
-        _recording = true; _record.Content = "按下新的组合键…"; _record.Focus(); _save.IsEnabled = false;
-        _global.IsEnabled = false;
-        _shortcutInfo.Text = "支持字母、数字或空格；Esc 取消。";
+        _recording = true; ActiveRecord.Content = "按下新的组合键…"; ActiveRecord.Focus(); ActiveSave.IsEnabled = false;
+        _global.IsEnabled = _visibilityEnabled.IsEnabled = false;
+        ActiveInfo.Text = "支持字母、数字或空格；Esc 取消。";
     }
     private async Task CancelRecording()
     {
-        _recording = false; _global.IsEnabled = true;
-        _candidate = _controller.Preferences.Current.NewNoteShortcut;
-        _record.Content = _candidate.Display(OperatingSystem.IsMacOS());
+        _recording = false; _global.IsEnabled = _visibilityEnabled.IsEnabled = true;
+        _candidate = _editingVisibility ? _controller.Preferences.Current.VisibilityShortcut : _controller.Preferences.Current.NewNoteShortcut;
+        ActiveRecord.Content = _candidate.Display(OperatingSystem.IsMacOS()); ActiveRecord.Tag = null;
         await _controller.RefreshShortcutAsync();
     }
     private async void OnRecordKey(object? sender, KeyEventArgs e)
@@ -162,17 +195,21 @@ public sealed class SettingsWindow : Window
         if (e.KeyModifiers.HasFlag(KeyModifiers.Shift)) modifiers |= ShortcutModifiers.Shift;
         if (e.KeyModifiers.HasFlag(KeyModifiers.Meta)) modifiers |= ShortcutModifiers.Meta;
         var candidate = new ShortcutSpec(key, modifiers);
-        if (candidate.Validate() is { } error) { _shortcutInfo.Text = error; return; }
-        _recording = false; _global.IsEnabled = true; _candidate = candidate; _record.Content = candidate.Display(OperatingSystem.IsMacOS());
-        await _controller.RefreshShortcutAsync(); _save.IsEnabled = true; _shortcutInfo.Text = "点击“保存快捷键”后，在所有应用中生效。";
+        if (candidate.Validate() is { } error) { ActiveInfo.Text = error; return; }
+        _recording = false; _global.IsEnabled = _visibilityEnabled.IsEnabled = true; _candidate = candidate; ActiveRecord.Tag = candidate; ActiveRecord.Content = candidate.Display(OperatingSystem.IsMacOS());
+        await _controller.RefreshShortcutAsync(); ActiveSave.IsEnabled = true; ActiveInfo.Text = "点击“保存快捷键”后，在所有应用中生效。";
     }
     private async Task SaveShortcut()
     {
-        _save.IsEnabled = false;
-        var result = await _controller.SaveShortcutAsync(_candidate, _controller.Preferences.Current.GlobalShortcutEnabled);
+        ActiveSave.IsEnabled = false;
+        var result = _editingVisibility
+            ? await _controller.SaveVisibilityShortcutAsync(_candidate, _controller.Preferences.Current.VisibilityShortcutEnabled)
+            : await _controller.SaveShortcutAsync(_candidate, _controller.Preferences.Current.GlobalShortcutEnabled);
+        ActiveRecord.Tag = _candidate;
         ShowMessage(result.Success ? "快捷键已保存。" : result.Error!, !result.Success);
-        if (!result.Success) _save.IsEnabled = true;
+        ActiveInfo.Text = result.Success ? "快捷键已保存。" : result.Error;
+        if (!result.Success) ActiveSave.IsEnabled = true;
     }
-    private void RefreshStatus() => _shortcutInfo.Text = _controller.ShortcutStatus;
+    private void RefreshStatus() { _shortcutInfo.Text = _controller.ShortcutStatus; _visibilityInfo.Text = _controller.VisibilityShortcutStatus; }
     private void ShowMessage(string message, bool error = false) { _message.Text = message; _message.Foreground = UI.Brush(error ? "Danger" : "Accent"); }
 }

@@ -21,6 +21,10 @@ public sealed class DesktopController
     private MainWindow? _library;
     private SettingsWindow? _settingsWindow;
     private readonly GlobalHotkeyService _hotkey;
+    private readonly GlobalHotkeyService _visibilityHotkey;
+    public string VisibilityShortcutStatus { get; private set; } = "正在注册快捷键…";
+    public bool DesktopHidden => _hidden;
+    public event Action? VisibilityChanged;
     public SettingsStore Preferences { get; }
     public AutoStartService AutoStart { get; } = new();
     public string ShortcutStatus { get; private set; } = "正在注册快捷键…";
@@ -39,6 +43,7 @@ public sealed class DesktopController
     {
         _store = store; _lifetime = lifetime; Preferences = preferences;
         _hotkey = new GlobalHotkeyService(() => Dispatcher.UIThread.Post(() => { if (!IsClosingSession) NewNote(); }));
+        _visibilityHotkey = new GlobalHotkeyService(() => Dispatcher.UIThread.Post(() => { if (!IsClosingSession) ToggleVisibility(); }));
         _lifetime.ShutdownMode = ShutdownMode.OnExplicitShutdown;
         _lifetime.ShutdownRequested += (_, e) => { if (!IsQuitting) { e.Cancel = true; _ = QuitAsync(); } };
         if (Application.Current?.TryGetFeature<IActivatableLifetime>() is { } activation)
@@ -153,6 +158,9 @@ public sealed class DesktopController
     }
     public async Task<HotkeyResult> SaveShortcutAsync(ShortcutSpec spec, bool enabled)
     {
+        if (spec.Validate() is { } error) return new(false, error);
+        if (enabled && Preferences.Current.VisibilityShortcutEnabled && spec == Preferences.Current.VisibilityShortcut)
+            return new(false, "新建便签与隐藏/显示不能使用相同的快捷键。");
         var old = Preferences.Current.NewNoteShortcut; var oldEnabled = Preferences.Current.GlobalShortcutEnabled;
         var result = await _hotkey.ApplyAsync(enabled ? spec : null);
         if (!result.Success) { ShortcutStatus = result.Error ?? "注册失败"; IntegrationChanged?.Invoke(); return result; }
@@ -170,8 +178,29 @@ public sealed class DesktopController
         if (_recordingMenus.Count == 0 && NativeMenu.GetMenu(Application.Current!) is { } menu)
             foreach (var item in menu.Items.OfType<NativeMenuItem>()) { _recordingMenus.Add((item, item.IsEnabled)); item.IsEnabled = false; }
         var result = await _hotkey.ApplyAsync(null);
+        var visibilityResult = await _visibilityHotkey.ApplyAsync(null);
+        if (!visibilityResult.Success) result = visibilityResult;
         if (!result.Success) RestoreRecordingMenus();
         return result;
+    }
+    public async Task<HotkeyResult> SaveVisibilityShortcutAsync(ShortcutSpec spec, bool enabled)
+    {
+        if (spec.Validate() is { } error) return new(false, error);
+        if (enabled && Preferences.Current.GlobalShortcutEnabled && spec == Preferences.Current.NewNoteShortcut)
+            return new(false, "隐藏/显示与新建便签不能使用相同的快捷键。");
+        var old = Preferences.Current.VisibilityShortcut;
+        var oldEnabled = Preferences.Current.VisibilityShortcutEnabled;
+        var result = await _visibilityHotkey.ApplyAsync(enabled ? spec : null);
+        if (!result.Success) { VisibilityShortcutStatus = result.Error ?? "注册失败"; IntegrationChanged?.Invoke(); return result; }
+        Preferences.Current.VisibilityShortcut = spec; Preferences.Current.VisibilityShortcutEnabled = enabled;
+        if (!Preferences.Save())
+        {
+            Preferences.Current.VisibilityShortcut = old; Preferences.Current.VisibilityShortcutEnabled = oldEnabled;
+            await _visibilityHotkey.ApplyAsync(oldEnabled ? old : null);
+            return new(false, Preferences.Error);
+        }
+        VisibilityShortcutStatus = enabled ? "隐藏/显示快捷键已生效" : "隐藏/显示快捷键已关闭";
+        IntegrationChanged?.Invoke(); return new(true);
     }
     private void RestoreRecordingMenus()
     {
@@ -184,7 +213,9 @@ public sealed class DesktopController
         if (IsQuitting) return new(true);
         var result = await _hotkey.ApplyAsync(Preferences.Current.GlobalShortcutEnabled ? Preferences.Current.NewNoteShortcut : null);
         ShortcutStatus = result.Success ? Preferences.Current.GlobalShortcutEnabled ? "全局快捷键已生效" : "全局快捷键已关闭" : result.Error ?? "注册失败";
-        IntegrationChanged?.Invoke(); return result;
+        var visibilityResult = await _visibilityHotkey.ApplyAsync(Preferences.Current.VisibilityShortcutEnabled ? Preferences.Current.VisibilityShortcut : null);
+        VisibilityShortcutStatus = visibilityResult.Success ? Preferences.Current.VisibilityShortcutEnabled ? "隐藏/显示快捷键已生效" : "隐藏/显示快捷键已关闭" : visibilityResult.Error ?? "注册失败";
+        IntegrationChanged?.Invoke(); return result.Success ? visibilityResult : result;
     }
     public Note NewNote(string? color = null, PixelPoint? near = null)
     {
@@ -238,7 +269,7 @@ public sealed class DesktopController
         foreach (var window in _windows.Values) window.Hide();
         UpdateVisibilityMenu();
     }
-    private void UpdateVisibilityMenu() { foreach (var item in _visibilityItems) item.Header = _hidden ? "显示桌面便签" : "暂时隐藏桌面便签"; }
+    private void UpdateVisibilityMenu() { foreach (var item in _visibilityItems) item.Header = _hidden ? "显示桌面便签" : "暂时隐藏桌面便签"; VisibilityChanged?.Invoke(); }
     private void BuildMenus()
     {
         NativeMenu CreateActions(bool includeQuit = true)
@@ -311,7 +342,7 @@ public sealed class DesktopController
             foreach (var document in _documents.ToArray()) document.CloseForSessionEnd();
             _settingsWindow?.Close();
             _library?.CloseForShutdown();
-            _hotkey.Dispose(); _tray?.Dispose(); _lifetime.Shutdown();
+            _hotkey.Dispose(); _visibilityHotkey.Dispose(); _tray?.Dispose(); _lifetime.Shutdown();
         }
         finally { IsClosingSession = false; }
     }
