@@ -48,15 +48,17 @@ test('character statistics preserve Unicode code points in rich and source views
 test('toolbar follows selection changes and recovers after being hidden', async ({ page }) => {
   await load(page, '**bold** plain');
   const bold = page.getByRole('button', { name: '粗体 · ⌘/Ctrl B', exact: true });
-  await page.locator('.tiptap').click();
-  await page.keyboard.press('ControlOrMeta+Home');
-  await page.keyboard.press('ArrowRight');
+  await page.locator('.tiptap strong').selectText();
   await expect(bold).toHaveAttribute('aria-pressed', 'true');
-  await page.keyboard.press('ControlOrMeta+End');
+  await page.evaluate(() => {
+    const range = document.createRange();
+    range.selectNodeContents(document.querySelector('.tiptap p').lastChild);
+    const selection = window.getSelection();
+    selection.removeAllRanges(); selection.addRange(range);
+  });
   await expect(bold).toHaveAttribute('aria-pressed', 'false');
   await page.evaluate(() => window.paper.configure({ compact: true, toolbar: false }));
-  await page.keyboard.press('ControlOrMeta+Home');
-  await page.keyboard.press('ArrowRight');
+  await page.locator('.tiptap strong').selectText();
   await page.evaluate(() => window.paper.configure({ compact: true, toolbar: true }));
   await expect(bold).toHaveAttribute('aria-pressed', 'true');
   expect(await page.evaluate(() => window.paper.getMarkdown())).toBe('**bold** plain');
