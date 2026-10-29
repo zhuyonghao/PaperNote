@@ -4,6 +4,12 @@ using PaperNote.Models;
 using PaperNote.Services;
 using PaperNote.Views;
 
+if (args is ["--benchmark"])
+{
+    PerformanceBenchmarks.Run();
+    return;
+}
+
 if (args.Length >= 2 && args[0] == "--instance-client")
 {
     using var client = new SingleInstanceService(args[1]);
@@ -17,6 +23,52 @@ var passed = 0;
 void Check(bool value, string name) { if (!value) throw new Exception("FAIL: " + name); Console.WriteLine("PASS: " + name); passed++; }
 try
 {
+    var summarySamples = new[] { "", " \r\n\t", "# 标题\r\n\r\n- [x] **正文** `code` 📝\r\n> 引用",
+        "  ## 标题\n\t* _甲_\t　乙\r\n1. ~~丙~~", "# 标题\n甲\t*\t乙\n丙", "***\n[]\n`_~`\n+ 最后的标题", "标题\n甲" + new string(' ', 500) + "乙\n末行" };
+    foreach (var markdown in summarySamples)
+    {
+        var lines = markdown.Split('\n')
+            .Select(l => System.Text.RegularExpressions.Regex.Replace(l, @"^\s*(#{1,6}\s+|[-*+]\s+(\[[ xX]\]\s*)?|>\s*|\d+\.\s*)", ""))
+            .Select(l => System.Text.RegularExpressions.Regex.Replace(l, @"[\[\]`*_~]", "").Trim()).Where(l => l.Length > 0).ToArray();
+        var summaryNote = new Note { Markdown = markdown };
+        var expected = string.Join("  ", lines.Skip(1));
+        if (expected.Length == 0) expected = "写下此刻的想法…";
+        Check(summaryNote.Title == (lines.FirstOrDefault() ?? "未命名便签") && summaryNote.Preview == expected,
+            "streamed title and preview preserve existing Markdown stripping and whitespace");
+        foreach (var length in new[] { 1, 8, 80, 320 })
+            Check(summaryNote.GetPreview(length) == (expected.Length > length ? expected[..length] + "…" : expected),
+                $"card previews stop at {length} characters without changing their prefix");
+    }
+    var cachedTitle = new Note { Markdown = "# 旧标题\n\n正文" };
+    Check(cachedTitle.Title == "旧标题", "title cache starts with the current Markdown");
+    cachedTitle.Markdown = "# 新标题\n\n正文";
+    Check(cachedTitle.Title == "新标题", "changing Markdown invalidates the cached title");
+    cachedTitle.Markdown = "标题\n" + new string('文', 4_000_000);
+    _ = cachedTitle.Title; _ = cachedTitle.GetPreview(320);
+    var allocatedBefore = GC.GetAllocatedBytesForCurrentThread();
+    for (var i = 0; i < 100; i++) { _ = cachedTitle.Title; _ = cachedTitle.GetPreview(320); }
+    Check(GC.GetAllocatedBytesForCurrentThread() - allocatedBefore < 1_000_000,
+        "repeated title and card preview reads do not allocate proportional to a 4 MB paragraph");
+    cachedTitle.Markdown = "标题\n" + new string('文', 319) + "📝尾声";
+    Check(cachedTitle.GetPreview(320) == new string('文', 319) + "…", "preview truncation keeps surrogate pairs intact");
+
+    var random = new Random(73);
+    const string characters = "# >-+_~[]`*\r\t abc文\n";
+    var equivalentSummaries = true;
+    for (var sample = 0; sample < 1000 && equivalentSummaries; sample++)
+    {
+        var markdown = new string(Enumerable.Range(0, 160).Select(_ => characters[random.Next(characters.Length)]).ToArray());
+        var lines = markdown.Split('\n')
+            .Select(l => System.Text.RegularExpressions.Regex.Replace(l, @"^\s*(#{1,6}\s+|[-*+]\s+(\[[ xX]\]\s*)?|>\s*|\d+\.\s*)", ""))
+            .Select(l => System.Text.RegularExpressions.Regex.Replace(l, @"[\[\]`*_~]", "").Trim()).Where(l => l.Length > 0).ToArray();
+        var expected = string.Join("  ", lines.Skip(1));
+        if (expected.Length == 0) expected = "写下此刻的想法…";
+        var summaryNote = new Note { Markdown = markdown };
+        equivalentSummaries = summaryNote.Title == (lines.FirstOrDefault() ?? "未命名便签") && summaryNote.Preview == expected
+            && summaryNote.GetPreview(24) == (expected.Length > 24 ? expected[..24] + "…" : expected);
+    }
+    Check(equivalentSummaries, "1000 mixed Markdown samples preserve title, preview and bounded prefixes");
+
     var ids = Enumerable.Range(0, 6).Select(_ => Guid.NewGuid()).ToArray();
     var selection = new LibrarySelection(); selection.SetVisible(ids);
     selection.Begin(); selection.Toggle(ids[1]); selection.Toggle(ids[4]);
@@ -144,15 +196,28 @@ try
     using (var store = new NoteStore(debounce))
     {
         var n = store.Add("one");
+        store.Save();
+        var saveNotifications = 0;
+        store.SaveStateChanged += () => saveNotifications++;
         for (var i = 0; i < 30; i++) store.UpdateMarkdown(n.Id, "version " + i);
+        Check(saveNotifications == 1, "typing a burst only notifies save status once until the state changes");
         await Task.Delay(700);
         Check(File.Exists(debounce) && File.ReadAllText(debounce).Contains("version 29") && !store.IsDirty, "autosave persists latest edit after debounce");
+        Check(saveNotifications == 2, "autosave notifies when the store becomes clean again");
     }
     var broken = Path.Combine(directory, "broken.json"); File.WriteAllText(broken, "{ damaged original");
     using (var store = new NoteStore(broken))
     {
         Check(store.Error is not null && Directory.GetFiles(directory, "broken.json.damaged-*").Length == 1, "invalid data is preserved with visible error");
         Check(File.ReadAllText(broken) == "{ damaged original", "loading never overwrites damaged source");
+    }
+    foreach (var encoding in new[] { System.Text.Encoding.UTF8, System.Text.Encoding.Unicode, System.Text.Encoding.BigEndianUnicode, System.Text.Encoding.UTF32 })
+    {
+        var encodedPath = Path.Combine(directory, "encoded-" + encoding.CodePage + ".json");
+        File.WriteAllText(encodedPath, "[{\"Markdown\":\"# 带 BOM 的便签 📝\"}]", encoding);
+        using var encodedStore = new NoteStore(encodedPath);
+        Check(encodedStore.Error is null && encodedStore.Notes.Single().Title == "带 BOM 的便签 📝",
+            $"streamed JSON loading preserves BOM encoding {encoding.WebName}");
     }
     var desktopPath = Path.Combine(directory, "desktop.json");
     Guid desktopId;

@@ -35,6 +35,32 @@ test('checking a task emits Markdown with correct note identity', async ({ page 
   expect(message.markdown).toContain('- [x] 喝水');
   expect(message.markdown).toContain('**粗体**');
 });
+
+test('character statistics preserve Unicode code points in rich and source views', async ({ page }) => {
+  const text = '中文📝👨‍👩‍👧‍👦e\u0301';
+  await load(page, text);
+  expect(await page.evaluate(() => window.messages.filter(m => m.type === 'stats').at(-1).count)).toBe([...text].length);
+  await page.evaluate(() => window.paper.setMode('source'));
+  await page.locator('#source').fill(text + '🙂');
+  expect(await page.evaluate(() => window.messages.filter(m => m.type === 'change').at(-1).count)).toBe([...text + '🙂'].length);
+});
+
+test('toolbar follows selection changes and recovers after being hidden', async ({ page }) => {
+  await load(page, '**bold** plain');
+  const bold = page.getByRole('button', { name: '粗体 · ⌘/Ctrl B', exact: true });
+  await page.locator('.tiptap').click();
+  await page.keyboard.press('ControlOrMeta+Home');
+  await page.keyboard.press('ArrowRight');
+  await expect(bold).toHaveAttribute('aria-pressed', 'true');
+  await page.keyboard.press('ControlOrMeta+End');
+  await expect(bold).toHaveAttribute('aria-pressed', 'false');
+  await page.evaluate(() => window.paper.configure({ compact: true, toolbar: false }));
+  await page.keyboard.press('ControlOrMeta+Home');
+  await page.keyboard.press('ArrowRight');
+  await page.evaluate(() => window.paper.configure({ compact: true, toolbar: true }));
+  await expect(bold).toHaveAttribute('aria-pressed', 'true');
+  expect(await page.evaluate(() => window.paper.getMarkdown())).toBe('**bold** plain');
+});
 test('source edits round trip and preserve exact text before rich edits', async ({ page }) => {
   const markdown = '# 新标题\n\n你好，世界 📝\n\n1. 一\n2. 二\n\n| A | B |\n| --- | --- |\n| 1 | 2 |';
   await page.evaluate(() => window.paper.toggleSource());
@@ -125,7 +151,8 @@ test('deleted notes are read only in rich and source modes', async ({ page }) =>
 });
 test('bold toolbar transforms selected text and undo works', async ({ page }) => {
   await load(page, 'hello');
-  await page.locator('.tiptap').click(); await page.keyboard.press('ControlOrMeta+a');
+  await page.locator('.tiptap p').selectText();
+  await expect.poll(() => page.evaluate(() => window.getSelection()?.toString())).toBe('hello');
   await page.getByRole('button', { name: '粗体 · ⌘/Ctrl B', exact: true }).click();
   await expect(page.locator('.tiptap strong')).toHaveText('hello');
   expect(await page.evaluate(() => window.paper.getMarkdown())).toBe('**hello**');

@@ -13,6 +13,7 @@ public sealed class EditorPane : Grid
     private readonly NoteStore? _store;
     private Note? _note;
     private string _markdown = "";
+    private string? _paperColor;
     private bool _deleted;
     private bool _ready;
     private readonly bool _compact;
@@ -130,8 +131,14 @@ public sealed class EditorPane : Grid
         // Set the native backing surface even when only the paper color changes.
         var surface = _compact ? AppTheme.Resolve(NoteColors.Get(note.Color).Paper) : AppTheme.Resolve("Canvas");
         Background = _web.Background = UI.Brush(surface);
+        var paper = AppTheme.Resolve(NoteColors.Get(note.Color).Paper);
         if (_note?.Id == note.Id && _markdown == note.Markdown && _deleted == note.IsDeleted)
-        { if (_ready) _ = ScriptAsync("paper.setColor(" + JsonSerializer.Serialize(AppTheme.Resolve(NoteColors.Get(note.Color).Paper)) + ")"); return; }
+        {
+            if (_ready && _paperColor != paper) _ = ScriptAsync("paper.setColor(" + JsonSerializer.Serialize(paper) + ")");
+            _paperColor = paper;
+            return;
+        }
+        _paperColor = paper;
         _note = note; _markdown = note.Markdown; _deleted = note.IsDeleted; _token++;
         if (_ready) _ = PushNoteAsync();
     }

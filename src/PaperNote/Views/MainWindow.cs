@@ -26,6 +26,9 @@ public sealed class MainWindow : Window
     private readonly Dictionary<string, TextBlock> _counts = [];
     private readonly DispatcherTimer _refresh = new() { Interval = TimeSpan.FromMilliseconds(220) };
     private readonly HashSet<Guid> _selected = [];
+    private readonly Dictionary<Guid, (CardState State, Button Card)> _renderedCards = [];
+    private readonly record struct CardState(string Markdown, string Color, bool Pinned, bool Deleted,
+        bool Open, DateTimeOffset UpdatedAt, string Time, bool Managing, bool Selected);
     private readonly StackPanel _selectionBar = UI.Stack(Orientation.Horizontal, 7);
     private readonly Button _manage = new() { Content = "管理便签", Classes = { "quiet" }, FontSize = 12 };
     private readonly TextBlock _selectionCount = UI.Text("", 12, "Muted");
@@ -103,7 +106,7 @@ public sealed class MainWindow : Window
         sort.Click += (_, _) => { _sortByTitle = !_sortByTitle; sort.Content = SidebarAction("sort", _sortByTitle ? "标题排序" : "最近编辑"); Refresh(); }; Grid.SetColumn(sort, 1); toolbar.Children.Add(sort);
         _manage.Click += (_, _) => { _managing = !_managing; _selected.Clear(); Refresh(); };
         Grid.SetColumn(_manage, 2); toolbar.Children.Add(_manage);
-        _search.TextChanged += (_, _) => Refresh(); Grid.SetRow(toolbar, 1); Grid.SetColumnSpan(toolbar, 2); top.Children.Add(toolbar); content.Children.Add(top);
+        _search.TextChanged += (_, _) => ScheduleRefresh(); Grid.SetRow(toolbar, 1); Grid.SetColumnSpan(toolbar, 2); top.Children.Add(toolbar); content.Children.Add(top);
         _selectionBar.Margin = new Thickness(0, 0, 14, 16);
         _selectionBar.Children.Add(_selectionCount);
         var selectAll = new Button { Content = "全选", Classes = { "quiet" } };
@@ -118,6 +121,15 @@ public sealed class MainWindow : Window
         _cards.SizeChanged += (_, _) => LayoutCards();
         _refresh.Tick += (_, _) => { _refresh.Stop(); Refresh(); };
         _store.Changed += NoteChanged; _store.DesktopChanged += DesktopChanged;
+        PropertyChanged += (_, e) => {
+            if (e.Property != IsVisibleProperty) return;
+            if (IsVisible) Refresh();
+            else
+            {
+                _refresh.Stop();
+                _cards.Children.Clear(); _renderedCards.Clear(); _visibleNotes.Clear();
+            }
+        };
         KeyDown += (_, e) => {
             if ((e.KeyModifiers & (OperatingSystem.IsMacOS() ? KeyModifiers.Meta : KeyModifiers.Control)) == 0) return;
             if (e.Key == Key.N) { e.Handled = true; controller.NewNote(); }
@@ -147,6 +159,8 @@ public sealed class MainWindow : Window
     private bool Matches(Note note) => _filter switch { "all" => !note.IsDeleted, "desktop" => !note.IsDeleted && note.Desktop.IsOpen, "pinned" => !note.IsDeleted && note.IsPinned, "trash" => note.IsDeleted, _ => !note.IsDeleted && note.Color == _filter };
     private void Refresh()
     {
+        _refresh.Stop();
+        if (!IsVisible) return; // Rebuild from current store data when the library is shown.
         foreach (var (key, button) in _navigation) button.Classes.Set("selected", key == _filter);
         foreach (var (key, text) in _counts) text.Text = _store.Notes.Count(n => key switch { "all" => !n.IsDeleted, "desktop" => !n.IsDeleted && n.Desktop.IsOpen, "pinned" => !n.IsDeleted && n.IsPinned, _ => n.IsDeleted }).ToString();
         var notes = _store.Notes.Where(Matches).Where(n => string.IsNullOrWhiteSpace(_search.Text) || n.Markdown.Contains(_search.Text, StringComparison.OrdinalIgnoreCase));
@@ -161,8 +175,32 @@ public sealed class MainWindow : Window
         _batchRestore.IsVisible = _filter == "trash"; _batchRestore.IsEnabled = _selected.Count > 0;
         _heading.Text = _filter switch { "all" => "全部便签", "desktop" => "桌面便签", "pinned" => "已收藏", "trash" => "最近删除", _ => NoteColors.Get(_filter).Name };
         _summary.Text = _filter == "trash" ? $"{list.Count} 张便签 · 可恢复或永久删除" : $"{list.Count} 张便签 · 让想法有处安放";
-        _cards.Children.Clear();
-        foreach (var note in list) _cards.Children.Add(CreateCard(note));
+        var visibleIds = list.Select(n => n.Id).ToHashSet();
+        foreach (var id in _renderedCards.Keys.Where(id => !visibleIds.Contains(id)).ToArray()) _renderedCards.Remove(id);
+        var cards = new List<Button>(list.Count);
+        foreach (var note in list)
+        {
+            var state = new CardState(note.Markdown, note.Color, note.IsPinned, note.IsDeleted,
+                note.Desktop.IsOpen, note.UpdatedAt, RelativeTime(note.UpdatedAt), _managing, _selected.Contains(note.Id));
+            if (!_renderedCards.TryGetValue(note.Id, out var rendered) || rendered.State != state)
+                _renderedCards[note.Id] = rendered = (state, CreateCard(note));
+            cards.Add(rendered.Card);
+        }
+        // Updating one note usually leaves the ordering unchanged. Replace only
+        // its card so other control trees, templates and flyouts remain reusable.
+        var sameOrder = _cards.Children.Count == cards.Count;
+        for (var i = 0; sameOrder && i < list.Count; i++)
+            sameOrder = _cards.Children[i].Tag is Guid id && id == list[i].Id;
+        if (sameOrder)
+        {
+            for (var i = 0; i < cards.Count; i++)
+                if (!ReferenceEquals(_cards.Children[i], cards[i])) _cards.Children[i] = cards[i];
+        }
+        else
+        {
+            _cards.Children.Clear();
+            _cards.Children.AddRange(cards);
+        }
         if (list.Count == 0)
         {
             var empty = UI.Stack(Orientation.Vertical, 10); empty.Margin = new Thickness(20, 65); empty.Children.Add(UI.Text("这里留着一点空白", 18, "Muted", FontWeight.Medium)); empty.Children.Add(UI.Text(!string.IsNullOrWhiteSpace(_search.Text) ? "换一个关键词，再找找看。" : _filter == "trash" ? "没有需要恢复或清理的便签。" : "新建一张便签，写下第一个想法。", 12, "Faint")); _cards.Children.Add(empty);
@@ -185,7 +223,7 @@ public sealed class MainWindow : Window
         Grid.SetColumn(remove, 1); tools.Children.Add(remove);
 
         var title = UI.Text(note.Title, 15, "Text", FontWeight.SemiBold); title.TextWrapping = TextWrapping.Wrap; title.MaxLines = 2; title.LineHeight = 21; title.TextTrimming = TextTrimming.CharacterEllipsis; title.VerticalAlignment = VerticalAlignment.Top; Grid.SetRow(title, 0); grid.Children.Add(title);
-        var preview = UI.Text(note.Preview, 13, "Muted"); preview.TextWrapping = TextWrapping.Wrap; preview.MaxLines = 4; preview.LineHeight = 21; preview.TextTrimming = TextTrimming.CharacterEllipsis; preview.VerticalAlignment = VerticalAlignment.Top; preview.Margin = new Thickness(0, 13, 0, 12); Grid.SetRow(preview, 1); grid.Children.Add(preview);
+        var preview = UI.Text(note.GetPreview(320), 13, "Muted"); preview.TextWrapping = TextWrapping.Wrap; preview.MaxLines = 4; preview.LineHeight = 21; preview.TextTrimming = TextTrimming.CharacterEllipsis; preview.VerticalAlignment = VerticalAlignment.Top; preview.Margin = new Thickness(0, 13, 0, 12); Grid.SetRow(preview, 1); grid.Children.Add(preview);
         var footer = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto,Auto") };
         footer.Children.Add(new Ellipse { Width = 7, Height = 7, Fill = UI.Brush(color.Dot), VerticalAlignment = VerticalAlignment.Center });
         var date = UI.Text(RelativeTime(note.UpdatedAt), 10, "Faint"); date.Margin = new Thickness(7, 0, 0, 0); Grid.SetColumn(date, 1); footer.Children.Add(date);
@@ -193,7 +231,7 @@ public sealed class MainWindow : Window
         Grid.SetColumn(badge, 2); footer.Children.Add(badge);
         Grid.SetColumn(tools, 3); footer.Children.Add(tools);
         Grid.SetRow(footer, 2); grid.Children.Add(footer);
-        var button = new Button { Content = grid, Height = 224, Margin = new Thickness(0, 0, 16, 16), Background = UI.Brush("Paper-" + color.Key), BorderBrush = UI.Brush("Border"), Classes = { "note-card" }, Padding = new Thickness(22, 22, 18, 14) };
+        var button = new Button { Tag = note.Id, Content = grid, Height = 224, Margin = new Thickness(0, 0, 16, 16), Background = UI.Brush("Paper-" + color.Key), BorderBrush = UI.Brush("Border"), Classes = { "note-card" }, Padding = new Thickness(22, 22, 18, 14) };
         button.Template = new FuncControlTemplate<Button>((b, _) => {
             var frame = new Border { BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(14), Padding = b.Padding, Child = new ContentPresenter { Content = b.Content, Background = Brushes.Transparent, HorizontalContentAlignment = HorizontalAlignment.Stretch, VerticalContentAlignment = VerticalAlignment.Stretch } };
             frame.Classes.Add("card-frame");
@@ -271,7 +309,8 @@ public sealed class MainWindow : Window
         if (date.Date == DateTimeOffset.Now.AddDays(-1).Date) return "昨天";
         return date.ToString("M月d日");
     }
-    private void NoteChanged(Guid? _) => Dispatcher.UIThread.Post(() => { _refresh.Stop(); _refresh.Start(); });
+    private void ScheduleRefresh() { _refresh.Stop(); if (IsVisible) _refresh.Start(); }
+    private void NoteChanged(Guid? _) => Dispatcher.UIThread.Post(ScheduleRefresh);
     private void DesktopChanged(Guid _) => NoteChanged(null);
     private async Task ImportAsync()
     {

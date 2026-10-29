@@ -1,8 +1,12 @@
 name: Build desktop apps
 on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
 jobs:
   build:
+    timeout-minutes: 20
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: macos-latest
@@ -20,21 +24,44 @@ jobs:
           node-version: '24'
           cache: npm
           cache-dependency-path: editor/package-lock.json
-      - run: npm ci
+      - name: Install editor dependencies
+        run: npm ci
         working-directory: editor
-      - run: npm run build
+      - name: Build embedded editor
+        run: npm run build
         working-directory: editor
-      - run: npx playwright install chromium webkit
+      - name: Build desktop solution
+        run: dotnet build PaperNote.slnx -c Release
+      - name: Test storage and integrations
+        run: dotnet run --project tests/PaperNote.Tests -c Release --no-build
+      - name: Install test browsers
+        run: npx playwright install chromium webkit
         working-directory: editor
-      - run: npm test
+      - name: Test editor in Chromium and WebKit
+        run: npm test -- --reporter=list,html
         working-directory: editor
-      - run: dotnet run --project tests/PaperNote.Tests
-      - if: runner.os == 'macOS'
+        env:
+          PLAYWRIGHT_HTML_OPEN: never
+      - name: Publish macOS app
+        if: runner.os == 'macOS'
         run: ./scripts/publish-macos.sh ${{ matrix.rid }}
-      - if: runner.os == 'Windows'
+      - name: Publish Windows app
+        if: runner.os == 'Windows'
         run: ./scripts/publish-windows.ps1 -Runtime ${{ matrix.rid }}
         shell: pwsh
-      - uses: actions/upload-artifact@v4
+      - name: Upload distribution
+        uses: actions/upload-artifact@v4
         with:
           name: PaperNote-${{ matrix.rid }}
-          path: artifacts/
+          path: artifacts/PaperNote-${{ matrix.rid }}.zip
+          if-no-files-found: error
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.rid }}
+          path: |
+            editor/playwright-report/
+            editor/test-results/
+          if-no-files-found: ignore
+          retention-days: 7

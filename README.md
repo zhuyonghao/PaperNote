@@ -98,6 +98,8 @@ Windows（PowerShell）：
 ```sh
 dotnet build src/PaperNote
 dotnet run --project tests/PaperNote.Tests
+# 原生窗口生命周期检查（需要桌面会话，不操作键盘和鼠标）
+dotnet run --project tests/PaperNote.UiTests -c Release
 cd editor
 npx playwright install chromium webkit
 npm test
@@ -110,7 +112,9 @@ cd editor
 PAPERNOTE_EDGE=1 npm test -- --project=chromium
 ```
 
-存储与集成测试含 49 项检查，覆盖保存、中文、删除保护、损坏数据保护、旧数据迁移、桌面会话、多屏位置恢复、快捷键验证、设置保存、文件启动参数与真正的跨进程命令及文件路径转发；浏览器测试覆盖 Markdown 渲染、任务勾选、源码往返、表格、输入规则、撤销隔离、只读删除状态、格式工具、图片及任务行布局，以及文档默认所见即所得、源码工具栏、快捷键、换行保留和跨文件撤销隔离。GitHub Actions 配置为分别在 macOS / Windows 构建和验证；本地跨编译不能代替 Windows 真机测试。
+存储与集成测试含 134 项检查，另有 11 项原生窗口生命周期检查，覆盖保存、中文、删除保护、损坏数据保护、旧数据迁移、桌面会话、多屏位置恢复、快捷键验证、设置保存、文件启动参数与真正的跨进程命令及文件路径转发，以及摘要内存上限、BOM 编码兼容、卡片复用和隐藏后恢复；浏览器测试覆盖 Markdown 渲染、任务勾选、源码往返、表格、输入规则、撤销隔离、只读删除状态、格式工具、图片及任务行布局，以及文档默认所见即所得、源码工具栏、快捷键、换行保留和跨文件撤销隔离。GitHub Actions 配置为分别在 macOS / Windows 构建和验证；本地跨编译不能代替 Windows 真机测试。
+
+性能基准与复现命令见 [性能优化记录](docs/performance.md)。
 
 在便签库左下角点击“设置与快捷键”。macOS 自启使用系统登录项服务（需要 macOS 13+），Windows 使用当前用户的启动项；不会在首次启动时自动开启。建议先把 macOS 应用放入“应用程序”，Windows 应用解压到固定目录，再开启自启，移动应用后应重新开启一次。
 

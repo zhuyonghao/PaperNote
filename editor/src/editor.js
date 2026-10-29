@@ -28,7 +28,19 @@ function applyReadingState() {
 }
 function flush() {
   if (!noteId) return;
-  send({ type: 'change', id: noteId, token, markdown: currentMarkdown, count: [...(sourceMode ? source.value : editor.getText())].length });
+  send({ type: 'change', id: noteId, token, markdown: currentMarkdown, count: characterCount(sourceMode ? source.value : editor.getText()) });
+}
+function characterCount(text) {
+  // Count Unicode code points without allocating an array and one string per character.
+  let count = 0;
+  for (let i = 0; i < text.length; i++, count++) {
+    const code = text.charCodeAt(i);
+    if (code >= 0xd800 && code <= 0xdbff && i + 1 < text.length) {
+      const next = text.charCodeAt(i + 1);
+      if (next >= 0xdc00 && next <= 0xdfff) i++;
+    }
+  }
+  return count;
 }
 function hasMarkdownFormatting(node) {
   return (node.type !== 'doc' && node.type !== 'paragraph' && node.type !== 'text' && node.type !== 'hardBreak')
@@ -55,8 +67,7 @@ function makeEditor(markdown) {
         return editor.commands.insertContent(document);
       }
     },
-    onUpdate: () => { if (!sourceMode) { currentMarkdown = editor.getMarkdown(); flush(); } updateToolbar(); },
-    onSelectionUpdate: updateToolbar,
+    onUpdate: () => { if (!sourceMode) { currentMarkdown = editor.getMarkdown(); flush(); } },
     onTransaction: updateToolbar
   });
 }
@@ -88,6 +99,7 @@ const tools = [
   ['redo', '重做 · ⌘/Ctrl Shift Z', null, () => editor.chain().focus().redo().run()]
 ];
 const toolbar = document.querySelector('#toolbar');
+const toolButtons = [];
 function insertSource(text, selectionStart = 0, selectionEnd = selectionStart) {
   if (!editable) return;
   source.focus();
@@ -117,7 +129,7 @@ function sourceCommand(key) {
     insertSource(value, value.length);
   }
 }
-for (const [key, label, text, action] of tools) {
+for (const [key, label, text, action, isActive] of tools) {
   if (key === 'separator') { const span = document.createElement('span'); span.className = 'separator'; toolbar.append(span); continue; }
   const button = document.createElement('button');
   button.dataset.command = key; button.title = label; button.setAttribute('aria-label', label);
@@ -125,15 +137,16 @@ for (const [key, label, text, action] of tools) {
   button.addEventListener('mousedown', e => e.preventDefault());
   button.addEventListener('click', () => { if (editable) sourceMode ? sourceCommand(key) : action(); });
   toolbar.append(button);
+  toolButtons.push({ button, isActive });
 }
 function updateToolbar() {
   if (!editor) return;
-  for (const [key, , , , isActive] of tools) {
-    const button = toolbar.querySelector(`[data-command="${key}"]`);
-    if (!button) continue;
-    button.disabled = !editable;
-    button.classList.toggle('active', !sourceMode && !!isActive?.());
-    button.setAttribute('aria-pressed', String(!sourceMode && !!isActive?.()));
+  for (const { button, isActive } of toolButtons) {
+    const active = toolbarVisible && !sourceMode && !!isActive?.();
+    if (button.disabled !== !editable) button.disabled = !editable;
+    button.classList.toggle('active', active);
+    const pressed = String(active);
+    if (button.getAttribute('aria-pressed') !== pressed) button.setAttribute('aria-pressed', pressed);
   }
 }
 document.querySelector('#link-cancel').onclick = () => { document.querySelector('#link-panel').hidden = true; sourceMode ? source.focus() : editor.commands.focus(); };
@@ -198,7 +211,7 @@ function setMode(mode) {
   document.querySelector('#link-panel').hidden = true;
   applyReadingState(); (sourceMode ? source : editor.view.dom).focus();
   send({ type: 'mode', source: sourceMode });
-  send({ type: 'stats', id: noteId, token, count: [...(sourceMode ? source.value : editor.getText())].length });
+  send({ type: 'stats', id: noteId, token, count: characterCount(sourceMode ? source.value : editor.getText()) });
 }
 for (const button of document.querySelectorAll('[data-mode]')) button.onclick = () => setMode(button.dataset.mode);
 document.addEventListener('keydown', e => {
@@ -240,7 +253,7 @@ window.paper = {
     source.value = currentMarkdown; source.readOnly = !editable;
     document.querySelector('#link-panel').hidden = true;
     makeEditor(currentMarkdown); applyReadingState();
-    send({ type: 'stats', id: noteId, token, count: [...(sourceMode ? source.value : editor.getText())].length });
+    send({ type: 'stats', id: noteId, token, count: characterCount(sourceMode ? source.value : editor.getText()) });
   },
   setColor(paper) { document.documentElement.style.setProperty('--paper', paper); },
   toggleSource() {

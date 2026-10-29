@@ -4,5 +4,6 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/PaperNote.Tests/PaperNote.Tests.csproj" />
+    <Project Path="tests/PaperNote.UiTests/PaperNote.UiTests.csproj" />
   </Folder>
 </Solution>

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text;
 using PaperNote.Models;
 
 namespace PaperNote.Services;
@@ -9,7 +10,7 @@ public sealed class NoteStore : IDisposable
     private readonly string _path;
     private readonly object _gate = new();
     private readonly Timer _timer;
-    private readonly JsonSerializerOptions _json = new() { WriteIndented = true };
+    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
     private bool _dirty;
     public List<Note> Notes { get; private set; } = [];
     public string? Error { get; private set; }
@@ -35,10 +36,15 @@ public sealed class NoteStore : IDisposable
         }
         try
         {
-            Notes = JsonSerializer.Deserialize<List<Note>>(File.ReadAllText(_path)) ?? throw new JsonException("便签文件内容为空");
-            if (Notes.GroupBy(n => n.Id).Any(g => g.Count() > 1) || Notes.Any(n => n.Markdown is null))
-                throw new JsonException("便签文件格式无效");
-            foreach (var note in Notes) note.Desktop ??= new DesktopNoteState();
+            using var stream = File.OpenRead(_path);
+            Notes = ReadNotes(stream) ?? throw new JsonException("便签文件内容为空");
+            var ids = new HashSet<Guid>();
+            foreach (var note in Notes)
+            {
+                if (note is null || note.Markdown is null || !ids.Add(note.Id))
+                    throw new JsonException("便签文件格式无效");
+                note.Desktop ??= new DesktopNoteState();
+            }
         }
         catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
         {
@@ -48,6 +54,26 @@ public sealed class NoteStore : IDisposable
             Error = "原数据无法读取，已保留 .damaged 备份。可从 notes.json.bak 手动恢复。";
             Notes = [];
         }
+    }
+    private static List<Note>? ReadNotes(FileStream stream)
+    {
+        // Match ReadAllText's BOM handling without allocating the whole JSON as
+        // a UTF-16 string. Normal app saves use UTF-8 and need no transcoding.
+        Span<byte> header = stackalloc byte[4];
+        var read = stream.ReadAtLeast(header, header.Length, throwOnEndOfStream: false);
+        (Encoding? encoding, int preambleLength) = header[..read] switch
+        {
+            [0, 0, 0xfe, 0xff] => (new UTF32Encoding(bigEndian: true, byteOrderMark: false), 4),
+            [0xff, 0xfe, 0, 0] => (Encoding.UTF32, 4),
+            [0xff, 0xfe, ..] => (Encoding.Unicode, 2),
+            [0xfe, 0xff, ..] => (Encoding.BigEndianUnicode, 2),
+            [0xef, 0xbb, 0xbf, ..] => (null, 3),
+            _ => (null, 0)
+        };
+        stream.Position = preambleLength;
+        if (encoding is null) return JsonSerializer.Deserialize<List<Note>>(stream);
+        using var utf8 = Encoding.CreateTranscodingStream(stream, encoding, Encoding.UTF8, leaveOpen: true);
+        return JsonSerializer.Deserialize<List<Note>>(utf8);
     }
     public Note Add(string markdown = "", string color = "yellow")
     {
@@ -95,9 +121,10 @@ public sealed class NoteStore : IDisposable
     }
     private void ScheduleSave()
     {
-        lock (_gate) _dirty = true;
+        bool notify;
+        lock (_gate) { notify = !_dirty; _dirty = true; }
         _timer.Change(400, Timeout.Infinite);
-        SaveStateChanged?.Invoke();
+        if (notify) SaveStateChanged?.Invoke();
     }
     public bool Save()
     {
@@ -109,8 +136,8 @@ public sealed class NoteStore : IDisposable
             try
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
-                var text = JsonSerializer.Serialize(Notes, _json);
-                File.WriteAllText(_path + ".tmp", text);
+                using (var stream = File.Create(_path + ".tmp"))
+                    JsonSerializer.Serialize(stream, Notes, JsonOptions);
                 if (File.Exists(_path)) File.Copy(_path, _path + ".bak", true);
                 File.Move(_path + ".tmp", _path, true);
                 _dirty = false;

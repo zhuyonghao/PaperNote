@@ -13,4 +13,5 @@ chmod +x "$app/Contents/MacOS/PaperNote"
 if command -v codesign >/dev/null 2>&1; then codesign --force --deep --sign - "$app"; fi
 registrar="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
 if [[ -x "$registrar" ]]; then "$registrar" -f "$app"; fi
+ditto -c -k --sequesterRsrc --keepParent "$app" "artifacts/PaperNote-$rid.zip"
 printf 'App: %s\n' "$PWD/$app"

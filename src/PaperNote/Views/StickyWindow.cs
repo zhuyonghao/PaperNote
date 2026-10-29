@@ -27,6 +27,7 @@ public sealed class StickyWindow : Window
     private readonly Flyout _options = new() { Placement = PlacementMode.BottomEdgeAlignedRight };
     private readonly List<(Button Button, Func<bool> Selected)> _optionChoices = [];
     private readonly StackPanel _colors = UI.Stack(Orientation.Horizontal, 0);
+    private string? _renderedColor;
     private readonly DispatcherTimer _geometryTimer = new() { Interval = TimeSpan.FromMilliseconds(300) };
     private bool _closing, _closePending, _restoring = true;
     private readonly int _offset;
@@ -161,6 +162,8 @@ public sealed class StickyWindow : Window
     {
         Title = _note.Title; _caption.Text = _editor.SourceMode ? "Markdown 源码" : DisplayTitle;
         Background = UI.Brush(NoteColors.Get(_note.Color).Paper); _editor.SetNote(_note);
+        if (_renderedColor == _note.Color) return;
+        _renderedColor = _note.Color;
         _colors.Children.Clear();
         foreach (var color in NoteColors.All)
         {
@@ -205,12 +208,15 @@ public sealed class StickyWindow : Window
         if (!_note.Desktop.Collapsed) SaveGeometry();
         _store.UpdateDesktop(_note, d => d.Collapsed = !d.Collapsed);
     }
-    private void OnChanged(Guid? id) => Dispatcher.UIThread.Post(() => {
+    private void OnChanged(Guid? id)
+    {
         if (id != _note.Id) return;
-        if (_note.IsDeleted) { Close(); return; }
-        UpdateContent();
-    });
-    private void OnDesktopChanged(Guid id) => Dispatcher.UIThread.Post(() => { if (id == _note.Id) ApplyDesktopState(); });
+        Dispatcher.UIThread.Post(() => {
+            if (_note.IsDeleted) { Close(); return; }
+            UpdateContent();
+        });
+    }
+    private void OnDesktopChanged(Guid id) { if (id == _note.Id) Dispatcher.UIThread.Post(ApplyDesktopState); }
     private void OnSaveStateChanged() => Dispatcher.UIThread.Post(() => {
         _status.Text = _store.Error is not null ? "重试保存" : _store.IsDirty ? "保存中" : "已保存";
         _status.Foreground = UI.Brush(_store.Error is not null ? "Danger" : "Muted");
