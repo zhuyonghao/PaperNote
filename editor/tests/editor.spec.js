@@ -46,22 +46,17 @@ test('character statistics preserve Unicode code points in rich and source views
 });
 
 test('toolbar follows selection changes and recovers after being hidden', async ({ page }) => {
-  await load(page, '**bold** plain');
+  await load(page, '**bold**\n\nplain');
   const bold = page.getByRole('button', { name: '粗体 · ⌘/Ctrl B', exact: true });
   await page.locator('.tiptap strong').selectText();
   await expect(bold).toHaveAttribute('aria-pressed', 'true');
-  await page.evaluate(() => {
-    const range = document.createRange();
-    range.selectNodeContents(document.querySelector('.tiptap p').lastChild);
-    const selection = window.getSelection();
-    selection.removeAllRanges(); selection.addRange(range);
-  });
+  await page.locator('.tiptap p').nth(1).selectText();
   await expect(bold).toHaveAttribute('aria-pressed', 'false');
   await page.evaluate(() => window.paper.configure({ compact: true, toolbar: false }));
   await page.locator('.tiptap strong').selectText();
   await page.evaluate(() => window.paper.configure({ compact: true, toolbar: true }));
   await expect(bold).toHaveAttribute('aria-pressed', 'true');
-  expect(await page.evaluate(() => window.paper.getMarkdown())).toBe('**bold** plain');
+  expect(await page.evaluate(() => window.paper.getMarkdown())).toBe('**bold**\n\nplain');
 });
 test('source edits round trip and preserve exact text before rich edits', async ({ page }) => {
   const markdown = '# 新标题\n\n你好，世界 📝\n\n1. 一\n2. 二\n\n| A | B |\n| --- | --- |\n| 1 | 2 |';
