@@ -1,9 +1,11 @@
 using System.Reflection;
 using System.Text.Json;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Threading;
 using PaperNote.Models;
 using PaperNote.Services;
+using PaperNote.Services.Platform;
 
 namespace PaperNote.Views;
 public sealed class EditorPane : Grid
@@ -16,6 +18,10 @@ public sealed class EditorPane : Grid
     private string? _paperColor;
     private bool _deleted;
     private bool _ready;
+    private bool _attached, _webAttached, _navigated;
+    private Window? _window;
+    private bool? _lowMemoryApplied;
+    private string? _appliedOptions, _surfaceColor;
     private readonly bool _compact;
     private bool _showFormatting;
     private bool _readOnly;
@@ -34,7 +40,7 @@ public sealed class EditorPane : Grid
     {
         _store = store; _compact = compact;
         UpdateBackground();
-        Children.Add(_web); Children.Add(_error);
+        Children.Add(_error);
         _web.WebMessageReceived += OnMessage;
         _web.NavigationStarted += (_, e) => {
             // Never let pasted links replace the local editor or gain access to its bridge.
@@ -44,10 +50,35 @@ public sealed class EditorPane : Grid
         _web.NavigationCompleted += (_, e) => {
             if (!e.IsSuccess) { _error.Text = "编辑器无法启动。Windows 请检查 WebView2 Runtime 是否已安装。"; _error.IsVisible = true; }
         };
-        AttachedToVisualTree += (_, _) => AppTheme.Changed += OnThemeChanged;
-        DetachedFromVisualTree += (_, _) => AppTheme.Changed -= OnThemeChanged;
+        _web.AdapterDestroyed += (_, _) => { _ready = _navigated = false; _appliedOptions = null; _lowMemoryApplied = null; };
+        PropertyChanged += (_, e) => { if (e.Property == IsVisibleProperty) UpdateActivity(); };
         AttachedToVisualTree += (_, _) => {
-            if (_ready) return;
+            _attached = true;
+            AppTheme.Changed += OnThemeChanged;
+            _window = TopLevel.GetTopLevel(this) as Window;
+            if (_window is not null) _window.PropertyChanged += OnWindowPropertyChanged;
+            UpdateActivity();
+        };
+        DetachedFromVisualTree += (_, _) => {
+            _attached = false;
+            AppTheme.Changed -= OnThemeChanged;
+            if (_window is not null) _window.PropertyChanged -= OnWindowPropertyChanged;
+            _window = null;
+        };
+    }
+    private void OnWindowPropertyChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
+    {
+        if (e.Property == Window.WindowStateProperty || e.Property == IsVisibleProperty) UpdateActivity();
+    }
+    private void UpdateActivity()
+    {
+        if (!_attached) return;
+        var active = IsVisible && _window?.IsVisible == true && _window.WindowState != WindowState.Minimized;
+        // Restoring a collapsed sticky should not start an unused renderer.
+        if (!_webAttached && active) { _webAttached = true; Children.Insert(0, _web); }
+        if (_webAttached && !_navigated && active)
+        {
+            _navigated = true;
             using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("PaperNote.Editor.editor.html")!;
             using var reader = new StreamReader(stream);
             // Apply the surface before WebView creates its first native frame. CSS
@@ -60,7 +91,9 @@ public sealed class EditorPane : Grid
                 .Replace("<html lang=\"zh-CN\">", $"<html lang=\"zh-CN\" data-theme=\"{theme}\" style=\"background:{background};--paper:{surface};--canvas:{surface}\">")
                 .Replace("<body>", _compact ? "<body class=\"compact\">" : "<body>");
             _web.NavigateToString(html);
-        };
+        }
+        if (_ready && OperatingSystem.IsWindows() && _lowMemoryApplied != !active
+            && WindowsWebViewMemory.SetLowMemory(_web, !active)) _lowMemoryApplied = !active;
     }
     private void OnMessage(object? sender, WebMessageReceivedEventArgs e)
     {
@@ -73,6 +106,7 @@ public sealed class EditorPane : Grid
                 case "ready":
                     _ready = true; _error.IsVisible = false;
                     _ = InitializeEditorAsync();
+                    UpdateActivity();
                     break;
                 case "change":
                     if (_note is null || root.GetProperty("token").GetInt32() != _token || root.GetProperty("id").GetString() != _note.Id.ToString()) return;
@@ -97,22 +131,33 @@ public sealed class EditorPane : Grid
     }
     public void ConfigureCompact(bool showFormatting, double fontSize)
     {
+        fontSize = Math.Clamp(double.IsFinite(fontSize) ? fontSize : 15, 13, 20);
+        if (_showFormatting == showFormatting && _fontSize == fontSize) return;
         _showFormatting = showFormatting;
-        _fontSize = Math.Clamp(double.IsFinite(fontSize) ? fontSize : 15, 13, 20);
+        _fontSize = fontSize;
         if (_ready) _ = ApplyOptionsAsync();
     }
-    private Task ApplyOptionsAsync() => ScriptAsync("paper.configure(" + JsonSerializer.Serialize(new { compact = _compact, toolbar = !_compact || _showFormatting, fontSize = _fontSize, mode = _viewMode, readOnly = _readOnly, dark = AppTheme.IsDark, canvas = AppTheme.Resolve("Canvas"), paper = AppTheme.Resolve(NoteColors.Get(_note?.Color ?? "white").Paper) }) + ")");
+    private Task ApplyOptionsAsync()
+    {
+        var options = JsonSerializer.Serialize(new { compact = _compact, toolbar = !_compact || _showFormatting, fontSize = _fontSize, mode = _viewMode, readOnly = _readOnly, dark = AppTheme.IsDark, canvas = AppTheme.Resolve("Canvas"), paper = AppTheme.Resolve(NoteColors.Get(_note?.Color ?? "white").Paper) });
+        if (_appliedOptions == options) return Task.CompletedTask;
+        _appliedOptions = options;
+        return ScriptAsync("paper.configure(" + options + ")");
+    }
     private string SurfaceColor => _compact
         ? AppTheme.Resolve(NoteColors.Get(_note?.Color ?? "white").Paper)
         : AppTheme.Resolve("Canvas");
-    private void UpdateBackground()
+    private void UpdateBackground(string? surface = null)
     {
         // NativeWebView forwards Background to the native browser controller;
         // a managed overlay cannot cover a windowed WebView on Windows.
-        Background = _web.Background = UI.Brush(SurfaceColor);
+        surface ??= SurfaceColor;
+        if (_surfaceColor == surface) return;
+        _surfaceColor = surface;
+        Background = _web.Background = UI.Brush(surface);
     }
     private void OnThemeChanged() { UpdateBackground(); if (_ready) _ = ApplyOptionsAsync(); }
-    public void SetReadOnly(bool readOnly) { if (readOnly && !_readOnly) _viewMode = "rich"; _readOnly = readOnly; if (_ready) _ = ApplyOptionsAsync(); }
+    public void SetReadOnly(bool readOnly) { if (_readOnly == readOnly) return; if (readOnly) _viewMode = "rich"; _readOnly = readOnly; if (_ready) _ = ApplyOptionsAsync(); }
     public void SetViewMode(string mode)
     {
         if (mode is not ("rich" or "source")) throw new ArgumentOutOfRangeException(nameof(mode));
@@ -130,7 +175,7 @@ public sealed class EditorPane : Grid
     {
         // Set the native backing surface even when only the paper color changes.
         var surface = _compact ? AppTheme.Resolve(NoteColors.Get(note.Color).Paper) : AppTheme.Resolve("Canvas");
-        Background = _web.Background = UI.Brush(surface);
+        UpdateBackground(surface);
         var paper = AppTheme.Resolve(NoteColors.Get(note.Color).Paper);
         if (_note?.Id == note.Id && _markdown == note.Markdown && _deleted == note.IsDeleted)
         {

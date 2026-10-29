@@ -5,6 +5,11 @@ const seed = '# 我的便签\n\n**粗体** 和 *斜体*\n\n- [ ] 喝水\n- [x] �
 async function load(page, markdown = seed, id = 'note-a', token = 1) {
   await page.evaluate(data => window.paper.setNote(data), { id, token, markdown, paper: '#fff6cf', deleted: false });
 }
+async function freezeClock(page) {
+  const time = new Date('2026-10-29T00:00:00Z');
+  await page.clock.install({ time });
+  await page.clock.pauseAt(time);
+}
 async function paste(page, text, html = '') {
   await page.evaluate(({ text, html }) => {
     const clipboardData = new DataTransfer();
@@ -30,6 +35,7 @@ test('Markdown renders as editable rich text with task states', async ({ page })
 });
 test('checking a task emits Markdown with correct note identity', async ({ page }) => {
   await page.locator('input[type=checkbox]').first().check();
+  await expect.poll(() => page.evaluate(() => window.messages.some(m => m.type === 'change'))).toBe(true);
   const message = await page.evaluate(() => window.messages.filter(m => m.type === 'change').at(-1));
   expect(message.id).toBe('note-a'); expect(message.token).toBe(1);
   expect(message.markdown).toContain('- [x] 喝水');
@@ -42,7 +48,7 @@ test('character statistics preserve Unicode code points in rich and source views
   expect(await page.evaluate(() => window.messages.filter(m => m.type === 'stats').at(-1).count)).toBe([...text].length);
   await page.evaluate(() => window.paper.setMode('source'));
   await page.locator('#source').fill(text + '🙂');
-  expect(await page.evaluate(() => window.messages.filter(m => m.type === 'change').at(-1).count)).toBe([...text + '🙂'].length);
+  await expect.poll(() => page.evaluate(() => window.messages.filter(m => m.type === 'change').at(-1)?.count)).toBe([...text + '🙂'].length);
 });
 
 test('toolbar follows selection changes and recovers after being hidden', async ({ page }) => {
@@ -68,6 +74,67 @@ test('source edits round trip and preserve exact text before rich edits', async 
   await expect(page.locator('.tiptap table')).toBeVisible();
   expect(await page.evaluate(() => window.paper.getMarkdown())).toBe(markdown);
 });
+
+test('source mode releases the rich document and rich mode releases the hidden source copy', async ({ page }) => {
+  await expect(page.locator('#source')).toHaveValue('');
+  await page.evaluate(() => window.paper.setMode('source'));
+  await expect(page.locator('.tiptap')).toHaveCount(0);
+  await expect(page.locator('#source')).toHaveValue(seed);
+  await page.locator('#source').fill('# 更新后的源码');
+  await page.evaluate(() => window.paper.setMode('rich'));
+  await expect(page.locator('.tiptap h1')).toHaveText('更新后的源码');
+  await expect(page.locator('#source')).toHaveValue('');
+});
+
+test('a burst shares one sync and a synchronous read includes pending input', async ({ page }) => {
+  await freezeClock(page);
+  await page.evaluate(() => { window.paper.setMode('source'); window.messages = []; });
+  await page.locator('#source').fill('first');
+  await page.locator('#source').fill('latest 📝');
+  expect(await page.evaluate(() => window.paper.getMarkdown())).toBe('latest 📝');
+  expect(await page.evaluate(() => window.messages.filter(m => m.type === 'change'))).toHaveLength(0);
+  await page.clock.runFor(119);
+  expect(await page.evaluate(() => window.messages.filter(m => m.type === 'change'))).toHaveLength(0);
+  await page.clock.runFor(1);
+  expect(await page.evaluate(() => window.messages.filter(m => m.type === 'change'))).toEqual([
+    { type: 'change', id: 'note-a', token: 1, markdown: 'latest 📝', count: 8 }
+  ]);
+});
+
+test('continuous input reaches the host within the maximum sync delay', async ({ page }) => {
+  await freezeClock(page);
+  await page.evaluate(() => { window.paper.setMode('source'); window.messages = []; });
+  for (let i = 0; i < 4; i++) {
+    await page.locator('#source').fill(`version ${i}`);
+    await page.clock.runFor(100);
+  }
+  expect(await page.evaluate(() => window.messages.filter(m => m.type === 'change').map(m => m.markdown))).toEqual(['version 3']);
+});
+
+test('replacing a note cancels its pending sync and keeps the new identity', async ({ page }) => {
+  await freezeClock(page);
+  await page.evaluate(() => { window.paper.setMode('source'); window.messages = []; });
+  await page.locator('#source').fill('old pending secret');
+  await load(page, '# New note', 'new-note', 8);
+  await page.clock.runFor(500);
+  expect(await page.evaluate(() => window.messages.filter(m => m.type === 'change'))).toHaveLength(0);
+  await page.locator('#source').fill('new edit');
+  await page.clock.runFor(120);
+  expect(await page.evaluate(() => window.messages.filter(m => m.type === 'change').at(-1))).toMatchObject({
+    id: 'new-note', token: 8, markdown: 'new edit'
+  });
+});
+
+test('leaving the window flushes pending rich input without a duplicate timer sync', async ({ page }) => {
+  await load(page, 'plain');
+  await freezeClock(page);
+  await page.evaluate(() => { window.messages = []; });
+  await page.locator('.tiptap').fill('final edit 📝');
+  await page.evaluate(() => window.dispatchEvent(new Event('blur')));
+  expect(await page.evaluate(() => window.messages.filter(m => m.type === 'change').at(-1)?.markdown)).toBe('final edit 📝');
+  await page.clock.runFor(500);
+  expect(await page.evaluate(() => window.messages.filter(m => m.type === 'change'))).toHaveLength(1);
+});
 test('typing Markdown heading shortcut creates a heading', async ({ page }) => {
   await load(page, ''); await page.locator('.tiptap').click();
   await page.keyboard.type('## '); await page.keyboard.insertText('新的灵感');
@@ -83,6 +150,7 @@ test('Markdown copied with an HTML clipboard flavor renders and emits the parsed
   await expect(page.locator('.tiptap blockquote')).toContainText('留下想法');
   await expect(page.locator('input[type=checkbox]').nth(1)).toBeChecked();
   await expect(page.locator('.tiptap pre')).toContainText('const idea = 1;');
+  await expect.poll(() => page.evaluate(() => window.messages.some(m => m.type === 'change'))).toBe(true);
   const message = await page.evaluate(() => window.messages.filter(m => m.type === 'change').at(-1));
   expect(message.id).toBe('note-a'); expect(message.token).toBe(1);
   expect(message.markdown).toContain('# 我的便签');
@@ -251,6 +319,8 @@ test('switching files clears source undo history', async ({ page }) => {
   await page.locator('#source').focus();
   await page.keyboard.press('ControlOrMeta+z');
   await expect(page.locator('#source')).toHaveValue('# 新文件');
+  await expect(page.locator('.tiptap')).toHaveCount(0);
+  await page.evaluate(() => window.paper.setMode('rich'));
   await expect(page.locator('.tiptap h1')).toHaveText('新文件');
   expect(await page.evaluate(() => window.paper.getMarkdown())).toBe('# 新文件');
 });

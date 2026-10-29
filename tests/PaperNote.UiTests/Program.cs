@@ -13,9 +13,10 @@ internal static class Program
     // Requires a desktop session. Exercise native window visibility without
     // keyboard/mouse input, system integration, WebViews or real user data.
     [STAThread]
-    private static void Main()
+    private static void Main(string[] args)
     {
         AppBuilder.Configure<TestApp>().UsePlatformDetect().SetupWithoutStarting();
+        if (args.Contains("--webview")) { WebViewLifecycleChecks.Run(); return; }
         var directory = Path.Combine(Path.GetTempPath(), "papernote-ui-tests-" + Guid.NewGuid());
         Directory.CreateDirectory(directory);
         MainWindow? window = null;

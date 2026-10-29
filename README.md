@@ -100,6 +100,8 @@ dotnet build src/PaperNote
 dotnet run --project tests/PaperNote.Tests
 # 原生窗口生命周期检查（需要桌面会话，不操作键盘和鼠标）
 dotnet run --project tests/PaperNote.UiTests -c Release
+# WebView 原生生命周期检查（需要 WebView2 / WKWebView）
+dotnet run --project tests/PaperNote.UiTests -c Release -- --webview
 cd editor
 npx playwright install chromium webkit
 npm test
@@ -112,7 +114,7 @@ cd editor
 PAPERNOTE_EDGE=1 npm test -- --project=chromium
 ```
 
-存储与集成测试含 134 项检查，另有 11 项原生窗口生命周期检查，覆盖保存、中文、删除保护、损坏数据保护、旧数据迁移、桌面会话、多屏位置恢复、快捷键验证、设置保存、文件启动参数与真正的跨进程命令及文件路径转发，以及摘要内存上限、BOM 编码兼容、卡片复用和隐藏后恢复；浏览器测试覆盖 Markdown 渲染、任务勾选、源码往返、表格、输入规则、撤销隔离、只读删除状态、格式工具、图片及任务行布局，以及文档默认所见即所得、源码工具栏、快捷键、换行保留和跨文件撤销隔离。GitHub Actions 配置为分别在 macOS / Windows 构建和验证；本地跨编译不能代替 Windows 真机测试。
+存储与集成测试含 134 项检查，另有 11 项原生窗口生命周期检查，覆盖保存、中文、删除保护、损坏数据保护、旧数据迁移、桌面会话、多屏位置恢复、快捷键验证、设置保存、文件启动参数与真正的跨进程命令及文件路径转发，以及摘要内存上限、BOM 编码兼容、卡片复用和隐藏后恢复。Windows 的 WebView 专项另有 15 项检查，验证收起时延迟启动、隐藏 / 最小化的低内存模式、恢复编辑、配置去重、同步前保存和关闭释放。浏览器每个引擎 51 项检查，覆盖 Markdown 渲染、任务勾选、源码往返、表格、输入规则、撤销隔离、只读删除状态、格式工具、图片及任务行布局，以及文档默认所见即所得、源码工具栏、快捷键、换行保留、跨文件撤销隔离、输入合并和待同步内容保护。GitHub Actions 配置为分别在 macOS / Windows 构建和验证；本地跨编译不能代替 Windows 真机测试。
 
 性能基准与复现命令见 [性能优化记录](docs/performance.md)。
 

@@ -34,6 +34,11 @@ jobs:
         run: dotnet build PaperNote.slnx -c Release
       - name: Test storage and integrations
         run: dotnet run --project tests/PaperNote.Tests -c Release --no-build
+      - name: Test Windows native windows and WebView lifecycle
+        if: runner.os == 'Windows'
+        run: |
+          dotnet run --project tests/PaperNote.UiTests -c Release --no-build
+          dotnet run --project tests/PaperNote.UiTests -c Release --no-build -- --webview
       - name: Install test browsers
         run: npx playwright install chromium webkit
         working-directory: editor

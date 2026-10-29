@@ -141,7 +141,7 @@ public sealed class DesktopController
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         { _ = ShowErrorAsync("无法打开文档：" + ex.Message); return; }
         _documents.Add(window); _lifetime.MainWindow ??= window;
-        window.Closed += (_, _) => _documents.Remove(window);
+        window.Closed += (_, _) => { _documents.Remove(window); ReleaseMainWindow(window); };
         window.Show();
     }
     public void HandleLaunch(string[] args)
@@ -238,9 +238,16 @@ public sealed class DesktopController
         _lifetime.MainWindow ??= window;
         _windows[note.Id] = window;
         window.Closed += (_, _) => {
-            _windows.Remove(note.Id); UpdateVisibilityMenu();
+            _windows.Remove(note.Id); ReleaseMainWindow(window); UpdateVisibilityMenu();
         };
         window.Show(); if (expand) window.FocusEditor(); UpdateVisibilityMenu();
+    }
+    private void ReleaseMainWindow(Window closed)
+    {
+        // OnExplicitShutdown keeps the process alive. Do not let MainWindow
+        // retain the first closed editor, its document and managed control tree.
+        if (_lifetime.MainWindow == closed)
+            _lifetime.MainWindow = _library ?? (Window?)_windows.Values.FirstOrDefault() ?? _documents.FirstOrDefault();
     }
     public async Task TrashNotesAsync(IEnumerable<Note> notes)
     {

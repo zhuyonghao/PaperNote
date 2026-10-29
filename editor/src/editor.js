@@ -9,6 +9,7 @@ import Image from '@tiptap/extension-image';
 
 let readOnly = false, deleted = false, toolbarVisible = true;
 let editor, noteId = '', token = 0, sourceMode = false, currentMarkdown = '', editable = true;
+let markdownDirty = false, pendingChange = false, syncTimer = 0, maxSyncTimer = 0;
 const editorEl = document.querySelector('#editor');
 let source = document.querySelector('#source');
 const send = message => {
@@ -26,10 +27,37 @@ function applyReadingState() {
   if (!editable) document.querySelector('#link-panel').hidden = true;
   updateToolbar();
 }
-function flush() {
-  if (!noteId) return;
-  send({ type: 'change', id: noteId, token, markdown: currentMarkdown, count: characterCount(sourceMode ? source.value : editor.getText()) });
+function cancelSync() {
+  clearTimeout(syncTimer); clearTimeout(maxSyncTimer);
+  syncTimer = maxSyncTimer = 0;
 }
+function getMarkdown() {
+  if (markdownDirty) {
+    // Serialize once per burst, or synchronously when the host saves/closes.
+    currentMarkdown = sourceMode
+      ? (currentMarkdown.includes('\r\n') ? source.value.replace(/\n/g, '\r\n') : source.value)
+      : editor.getMarkdown();
+    markdownDirty = false;
+  }
+  return currentMarkdown;
+}
+function scheduleSync() {
+  markdownDirty = pendingChange = true;
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(() => flush(false), 120);
+  // Continuous typing must still reach autosave without waiting for a pause.
+  if (!maxSyncTimer) maxSyncTimer = setTimeout(() => flush(false), 400);
+}
+function flush(force = true) {
+  cancelSync();
+  if (!noteId || (!force && !pendingChange)) return;
+  const markdown = getMarkdown();
+  pendingChange = false;
+  send({ type: 'change', id: noteId, token, markdown, count: characterCount(sourceMode ? source.value : editor.getText()) });
+}
+window.addEventListener('blur', () => flush(false));
+window.addEventListener('pagehide', () => flush(false));
+document.addEventListener('visibilitychange', () => { if (document.hidden) flush(false); });
 function characterCount(text) {
   // Count Unicode code points without allocating an array and one string per character.
   let count = 0;
@@ -47,7 +75,7 @@ function hasMarkdownFormatting(node) {
     || !!node.marks?.length || !!node.content?.some(hasMarkdownFormatting);
 }
 function makeEditor(markdown) {
-  editor?.destroy();
+  destroyEditor();
   editor = new Editor({
     element: editorEl,
     extensions: [StarterKit.configure({ underline: false, trailingNode: false, link: { openOnClick: false, autolink: false } }), Markdown,
@@ -67,9 +95,13 @@ function makeEditor(markdown) {
         return editor.commands.insertContent(document);
       }
     },
-    onUpdate: () => { if (!sourceMode) { currentMarkdown = editor.getMarkdown(); flush(); } },
+    onUpdate: () => { if (!sourceMode) scheduleSync(); },
     onTransaction: updateToolbar
   });
+}
+function destroyEditor() {
+  editor?.destroy(); editor = undefined;
+  editorEl.replaceChildren();
 }
 const icons = {
   bold: '<path d="M6 4h6a4 4 0 010 8H6zm0 8h7a4 4 0 010 8H6z"/>',
@@ -140,9 +172,8 @@ for (const [key, label, text, action, isActive] of tools) {
   toolButtons.push({ button, isActive });
 }
 function updateToolbar() {
-  if (!editor) return;
   for (const { button, isActive } of toolButtons) {
-    const active = toolbarVisible && !sourceMode && !!isActive?.();
+    const active = toolbarVisible && !sourceMode && !!editor && !!isActive?.();
     if (button.disabled !== !editable) button.disabled = !editable;
     button.classList.toggle('active', active);
     const pressed = String(active);
@@ -166,8 +197,7 @@ document.querySelector('#link-apply').onclick = () => {
 function captureSource() {
   // Textareas normalize line endings. Preserve the file's CRLF convention and
   // keep the original bytes' text untouched until the user actually edits.
-  currentMarkdown = currentMarkdown.includes('\r\n') ? source.value.replace(/\n/g, '\r\n') : source.value;
-  flush();
+  scheduleSync();
 }
 function handleSourceKeydown(e) {
   if (!editable || e.isComposing) return;
@@ -198,20 +228,24 @@ function resetSource() {
 }
 resetSource();
 function setMode(mode) {
-  if (!['rich', 'source'].includes(mode) || !editor) return;
+  if (!['rich', 'source'].includes(mode)) return;
   if (sourceMode === (mode === 'source')) return;
   flush();
-  const wasSource = sourceMode;
   sourceMode = mode === 'source';
-  if (!wasSource) source.value = currentMarkdown;
-  makeEditor(currentMarkdown);
+  if (sourceMode) {
+    destroyEditor(); source.value = currentMarkdown;
+  } else {
+    // Release the textarea's text and native undo buffer while rich text is active.
+    resetSource(); source.value = '';
+    if (noteId) makeEditor(currentMarkdown);
+  }
   editorEl.hidden = mode === 'source'; source.hidden = mode === 'rich';
   document.body.classList.toggle('source-mode', sourceMode);
   for (const button of document.querySelectorAll('[data-mode]')) button.setAttribute('aria-pressed', String(button.dataset.mode === mode));
   document.querySelector('#link-panel').hidden = true;
-  applyReadingState(); (sourceMode ? source : editor.view.dom).focus();
+  applyReadingState(); (sourceMode ? source : editor?.view.dom)?.focus();
   send({ type: 'mode', source: sourceMode });
-  send({ type: 'stats', id: noteId, token, count: characterCount(sourceMode ? source.value : editor.getText()) });
+  send({ type: 'stats', id: noteId, token, count: characterCount(sourceMode ? source.value : editor?.getText() || '') });
 }
 for (const button of document.querySelectorAll('[data-mode]')) button.onclick = () => setMode(button.dataset.mode);
 document.addEventListener('keydown', e => {
@@ -246,13 +280,16 @@ window.paper = {
     if (options.mode) setMode(options.mode);
   },
   setNote(note) {
+    // A queued callback for the previous note must never publish into this note.
+    cancelSync(); markdownDirty = pendingChange = false;
     resetSource();
     noteId = note.id; token = note.token; deleted = !!note.deleted; editable = !deleted && !readOnly;
     currentMarkdown = note.markdown;
     document.documentElement.style.setProperty('--paper', note.paper);
-    source.value = currentMarkdown; source.readOnly = !editable;
+    source.value = sourceMode ? currentMarkdown : ''; source.readOnly = !editable;
     document.querySelector('#link-panel').hidden = true;
-    makeEditor(currentMarkdown); applyReadingState();
+    if (sourceMode) destroyEditor(); else makeEditor(currentMarkdown);
+    applyReadingState();
     send({ type: 'stats', id: noteId, token, count: characterCount(sourceMode ? source.value : editor.getText()) });
   },
   setColor(paper) { document.documentElement.style.setProperty('--paper', paper); },
@@ -260,7 +297,7 @@ window.paper = {
     setMode(sourceMode ? 'rich' : 'source');
   },
   setMode,
-  flush, focus() { if (sourceMode) source.focus(); else editor.commands.focus(); },
-  getMarkdown() { return currentMarkdown; }
+  flush, focus() { if (sourceMode) source.focus(); else editor?.commands.focus(); },
+  getMarkdown
 };
 send({ type: 'ready' });
